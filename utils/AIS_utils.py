@@ -156,7 +156,12 @@ def data_pre(ais, timestamp):
 
 def data_pred(AIS_cur, AIS_read, AIS_las, timestamp):
 
+    # Time offset correction - AIS data is ~5 hours behind video
+    TIME_OFFSET = 5 * 3600 * 1000  # 5 hours in milliseconds
+
     for index, ais in AIS_read.iterrows():
+        # Apply time offset to AIS timestamp
+        ais['timestamp'] = ais['timestamp'] + TIME_OFFSET
         ais['timestamp'] = round(ais['timestamp']/1000)
         
         if ais['timestamp'] == int(timestamp//1000):

@@ -64,8 +64,14 @@ def main(arg):
 
         videoWriter.write(result)
         cv2.imshow(name, result)
-        cv2.waitKey(1)
-        if cv2.getWindowProperty(name, cv2.WND_PROP_AUTOSIZE) < 1:
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord('q') or key == 27:  # 'q' or ESC key
+            break
+        try:
+            if cv2.getWindowProperty(name, cv2.WND_PROP_AUTOSIZE) < 1:
+                break
+        except cv2.error:
+            # Window might be closed externally
             break   
     cap.release()
     videoWriter.release()
