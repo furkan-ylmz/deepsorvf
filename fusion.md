@@ -1,10 +1,3 @@
-# DeepSORVF - Sistem İşleyiş Raporu
-
-**Tarih:** 07 Eylül 2025  
-**Konu:** AIS-Visual Fusion Vessel Tracking System İşleyiş Analizi
-
----
-
 ## 1. SİSTEM GENEL BAKIŞ
 
 DeepSORVF, gemi takibi için AIS verilerini görsel tespit ile birleştiren bir sistemdir.
@@ -124,41 +117,234 @@ Her AIS-Visual çifti için:
 
 ---
 
-## 3. SİSTEM ENTEGRASYONU - GENEL İŞLEYİŞ
+## 3. SİSTEM ENTEGRASYONU - DETAYLI FONKSİYON BAZLI İŞLEYİŞ
 
-### Ana İşlem Döngüsü (Her Frame için):
+### Ana İşlem Döngüsü (main.py - her frame için):
 
-**1. AIS Veri Hazırlama (AIS_utils)**
-- CSV dosyasından AIS verilerini okur
-- Zaman senkronizasyonu yapar (+5 saat offset)
-- Kalite filtreleme uygular (MMSI, hız, konum kontrolü)
-- GPS koordinatlarını piksel koordinatlarına dönüştürür
-- **Sonuç**: Frame için hazır AIS verisi (3-5 gemi)
+```python
+AIS_vis, AIS_cur = AIS.process(camera_para, timestamp, Time_name)
+Vis_tra, Vis_cur = VIS.feedCap(im, timestamp, AIS_vis, bin_inf)
+Fus_tra, bin_inf = FUS.fusion(AIS_vis, AIS_cur, Vis_tra, Vis_cur, timestamp)
+```
 
-**2. Visual İşleme (VIS_utils)**
-- Video frame'ini YOLO ile analiz eder
-- Gemi tespitleri yapar (confidence >0.7)
-- Anti-occlusion ile kayıp gemileri tahmin eder
-- DeepSORT ile sürekli takip ID'leri oluşturur
-- **Sonuç**: Takip edilen gemiler (2-5 gemi, sürekli ID'lerle)
+---
 
-**3. Fusion İşleme (FUS_utils)**
-- AIS ve Visual trajectory'lerini karşılaştırır
-- DTW ile benzerlik skorları hesaplar
-- Hungarian algorithm ile optimal eşleştirme yapar
-- Constraint kontrolü yapar (mesafe, açı)
-- **Sonuç**: AIS+Visual birleştirilmiş gemi verileri
+### **1. AIS VERİ İŞLEME AŞAMASI (AIS_utils.py)**
 
-### İşlem Sırası Detayı:
+#### **AIS.process()** çağrısı ile başlar:
 
-**Adım 1**: Video frame gelir
-**Adım 2**: AIS_utils timestamp'e göre AIS dosyasını seçer ve işler
-**Adım 3**: VIS_utils frame'de gemi tespiti yapar
-**Adım 4**: VIS_utils anti-occlusion ile kayıp gemileri ekler
-**Adım 5**: VIS_utils DeepSORT ile ID tracking yapar
-**Adım 6**: FUS_utils her AIS ile her Visual'ı karşılaştırır
-**Adım 7**: FUS_utils optimal eşleştirme yapar
-**Adım 8**: Sonuç olarak birleştirilmiş gemi verisi döner
+**1.1. Zaman Kontrolü ve Başlatma**
+- `timestamp % 1000 < self.t` kontrolü yapar
+- `initialization()` fonksiyonu çağrılır
+  - Önceki frame'in verilerini `AIS_las` olarak alır
+  - Yeni boş DataFrame'ler oluşturur (`AIS_cur`, `AIS_vis`)
+
+**1.2. AIS Dosyası Okuma**
+- `read_ais(Time_name)` fonksiyonu çağrılır
+  - CSV dosya yolunu oluşturur: `ais_path/Time_name.csv`
+  - Pandas ile 8 sütunlu AIS verisini okur
+  - Hata durumunda boş DataFrame döner
+
+**1.3. Kalite Filtreleme**
+- `data_coarse_process(AIS_read, AIS_las, camera_para, max_dis)` çağrılır
+  - MMSI doğrulama: 100M-999M arası kontrol
+  - Koordinat doğrulama: lat/lon geçerli aralık kontrol
+  - Hız filtreleme: >0.3 knot kontrol
+  - Mesafe filtreleme: `count_distance()` ile kameradan 2 deniz mili kontrol
+  - `data_filter()` ile FOV kontrol
+
+**1.4. Zaman Senkronizasyonu ve Tahmin**
+- `data_pred(AIS_cur, AIS_read, AIS_las, timestamp)` çağrılır
+  - TIME_OFFSET (+5 saat) ekler
+  - Timestamp eşleşmesi kontrol eder
+  - Eşleşmezse `data_pre()` ile pozisyon tahmini yapar
+    - `pyproj.Geod.fwd()` ile hız/rota bazında yeni konum hesaplar
+
+**1.5. Koordinat Dönüşümü**
+- `data_tran()` → `transform()` fonksiyonu çağrılır
+  - Her AIS verisi için `data_filter()` kontrol
+  - Geçerliyse `visual_transform()` çağrılır:
+    - `count_distance()` ile mesafe hesaplar
+    - `getDegree()` ile açı hesaplar
+    - Kamera parametreleri ile piksel koordinatları hesaplar
+  - **Sonuç**: `AIS_vis` (piksel koordinatlı AIS), `AIS_cur` (mevcut frame AIS)
+
+---
+
+### **2. VISUAL İŞLEME AŞAMASI (VIS_utils.py)**
+
+#### **VIS.feedCap()** çağrısı ile başlar:
+
+**2.1. YOLO Gemi Tespiti**
+- `detection(image)` fonksiyonu çağrılır
+  - Görüntüyü RGB'ye çevirir
+  - `yolo.detect_image()` ile YOLO modeli çalıştırır
+  - Confidence >0.7 olan tespitleri döner
+  - **Sonuç**: `bboxes` listesi [(x1,y1,x2,y2,class,conf), ...]
+
+**2.2. Anti-Occlusion İşleme**
+- `anti_occ()` fonksiyonu çağrılır
+  - `OAR_extractor()` ile önceki frame'lerden overlap tespiti
+  - `whether_occlusion()` → `overlap()` ile çakışma kontrol
+  - Binding bilgisinden MMSI-ID eşleştirmesi
+  - AIS verisi varsa tahmin edilen pozisyona synthetic detection ekler
+  - **Sonuç**: `bboxes_anti_occ` listesi (ek tahmin edilen gemiler)
+
+**2.3. DeepSORT Takip**
+- `track()` fonksiyonu çağrılır
+  - Bounding box'ları DeepSORT formatına çevirir
+  - `deepsort.update()` çağrılır:
+    - Kalman filter ile hareket tahmini
+    - CNN ile appearance feature çıkarma
+    - Hungarian algorithm ile ID association
+    - Track lifecycle management
+  - **Sonuç**: `Vis_tra_cur_3` (tracking sonuçları)
+
+**2.4. Trajectory Güncelleme**
+- `update_tra()` fonksiyonu çağrılır
+  - Aynı ID'li çoklu tespitlerin ortalamasını alır (`mean()`)
+  - `motion_features_extraction()` çağrılır:
+    - `speed_extract()` ile hız vektörü hesaplar
+    - Son 5 frame ile karşılaştırma yapar
+  - Geçmiş verilerini günceller (`last5_vis_tra_list`)
+  - **Sonuç**: `Vis_tra` (tüm trajectory), `Vis_cur` (mevcut frame)
+
+---
+
+### **3. FUSION EŞLEŞTIRME AŞAMASI (FUS_utils.py)**
+
+#### **FUS.fusion()** çağrısı ile başlar:
+
+**3.1. Trajectory Gruplama**
+- `traj_group(AIS_vis, AIS_cur, 'AIS')` çağrılır
+  - MMSI'ye göre `groupby()` yapar
+  - Trajectory koordinatları (x,y) çıkarır
+  - **Sonuç**: `AIS_list`, `AIS_MMSIlist`, `AInf_list`
+
+- `traj_group(Vis_tra, Vis_cur, 'VIS')` çağrılır
+  - ID'ye göre `groupby()` yapar
+  - Trajectory koordinatları (x,y) çıkarır
+  - **Sonuç**: `VIS_list`, `VIS_IDlist`, `VInf_list`
+
+**3.2. Benzerlik Hesaplama**
+- `cal_similarity()` fonksiyonu çağrılır
+  - Her AIS-Visual çifti için döngü
+  - `angle()` ile trajectory yön farkı hesaplar
+  - Euclidean mesafe hesaplar: `((x_VIS-x_AIS)²+(y_VIS-y_AIS)²)^0.5`
+  - Mesafe <500 piksel ve açı <157.5° kontrolü
+  - `DTW_fast()` ile benzerlik skoru:
+    - `__reduce_by_half()` ile downsampling
+    - `fastdtw()` ile Dynamic Time Warping
+    - `math.exp(theta)` ile açı penaltısı
+  - Binding bonus hesaplama (önceki eşleştirmeler)
+  - **Sonuç**: `matrix_S` similarity matrix
+
+**3.3. Optimal Eşleştirme**
+- `linear_assignment(matrix_S)` çağrılır (Hungarian Algorithm)
+  - Scipy'nin Hungarian implementation'ı
+  - Minimum cost assignment bulur
+  - **Sonuç**: `row_ind`, `col_ind` (optimal eşleştirmeler)
+
+**3.4. Son Filtreleme**
+- `data_filter()` fonksiyonu çağrılır
+  - Her eşleştirme için tekrar kontrol:
+    - Mesafe <500 piksel
+    - Açı <150° (daha sıkı kontrol)
+  - **Sonuç**: `matches` (geçerli eşleştirmeler)
+
+**3.5. Veri Kaydetme ve Binding**
+- `save_data()` fonksiyonu çağrılır
+  - Her match için fusion result oluşturur
+  - Match counter artırır (süreklilik takibi)
+  - Fog tolerance (2 saniye kayıp toleransı)
+  - Binding information günceller
+  - **Sonuç**: `mat_list` (fusion results), `bin_cur` (binding info)
+
+---
+
+### **4. İŞLEM SIRASI ÖZETİ**
+
+```
+Frame Input → 
+  ├── AIS.process()
+  │   ├── read_ais() → CSV okuma
+  │   ├── data_coarse_process() → filtreleme
+  │   ├── data_pred() → zaman sync + tahmin
+  │   └── visual_transform() → koordinat dönüşümü
+  │
+  ├── VIS.feedCap()
+  │   ├── detection() → YOLO tespit
+  │   ├── anti_occ() → occlusion handling
+  │   ├── track() → DeepSORT tracking
+  │   └── update_tra() → trajectory update
+  │
+  └── FUS.fusion()
+      ├── traj_group() → trajectory gruplama
+      ├── cal_similarity() → DTW benzerlik
+      ├── linear_assignment() → Hungarian eşleştirme
+      ├── data_filter() → son filtreleme
+      └── save_data() → binding + sonuç
+```
+
+**Her fonksiyon belirli bir mikro-görevden sorumludur ve bir sonrakine temiz veri aktarır.**
+
+### **5. FONKSİYON ÇAĞRI HIERARCHY'Sİ**
+
+**Ana döngü:** `main() → process() → feedCap() → fusion()`
+
+**AIS Modülü:**
+```
+process()
+├── initialization()
+├── ais_pro()
+│   ├── read_ais()
+│   ├── data_coarse_process()
+│   │   ├── count_distance()
+│   │   └── data_filter()
+│   ├── data_pred()
+│   │   └── data_pre()
+│   │       └── pyproj.Geod.fwd()
+│   └── data_tran()
+│       └── transform()
+│           ├── data_filter()
+│           └── visual_transform()
+│               ├── count_distance()
+│               └── getDegree()
+```
+
+**Visual Modülü:**
+```
+feedCap()
+├── detection()
+│   └── yolo.detect_image()
+├── anti_occ()
+│   ├── OAR_extractor()
+│   │   ├── whether_occlusion()
+│   │   └── overlap()
+│   └── traj_prediction_via_visual()
+├── track()
+│   └── deepsort.update()
+└── update_tra()
+    └── motion_features_extraction()
+        └── speed_extract()
+```
+
+**Fusion Modülü:**
+```
+fusion()
+├── initialization()
+├── traj_match()
+│   ├── traj_group() [x2 - AIS & VIS]
+│   ├── cal_similarity()
+│   │   ├── angle()
+│   │   └── DTW_fast()
+│   │       ├── __reduce_by_half()
+│   │       └── fastdtw()
+│   ├── linear_assignment()
+│   ├── data_filter()
+│   │   └── angle()
+│   └── save_data()
+```
 
 ---
 
@@ -181,19 +367,3 @@ Her AIS-Visual çifti için:
 1. **Zaman Senkronizasyonu**: 5 saatlik offset eklendi
 2. **Koordinat Dönüşümü**: Filtreleme parametreleri optimize edildi
 3. **Eşleştirme Mesafesi**: max_dis 200'den 500 piksele artırıldı
-
----
-
-## 5. SONUÇ
-
-DeepSORVF sistemi, AIS verilerini görsel tespit ile başarılı şekilde birleştirerek gemi takibi yapmaktadır. Sistem:
-
-- AIS verilerini video ile senkronize eder
-- YOLO ile gemileri tespit eder
-- DeepSORT ile sürekli takip sağlar
-- DTW ve Hungarian algorithm ile optimal AIS-Visual eşleştirmesi yapar
-- Anti-occlusion ile geçici kayıpları tolere eder
-- Gerçek zamana yakın performans sunar (2 FPS)
-
-**Ana Güçlü Yönler**: Çok modlu veri birleştirme, robust takip, geçici kayıp toleransı
-**İyileştirme Alanları**: Parametre optimizasyonu, çoklu kamera desteği, hava durumu adaptasyonu
