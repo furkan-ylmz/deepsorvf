@@ -9,18 +9,14 @@ from IPython import embed
 import os
 
 def count_distance(point1, point2, Type='m'):
-    '''
-    '''
-    
-    distance = geodesic(point1, point2).m  
+
+    distance = geodesic(point1, point2).m
     if Type == 'nm':
-        
         distance = distance * 0.00054
     return distance
 
 def getDegree(latA, lonA, latB, lonB):
-    '''
-    '''
+
     radLatA = radians(latA)
     radLonA = radians(lonA)
     radLatB = radians(latB)
@@ -33,9 +29,7 @@ def getDegree(latA, lonA, latB, lonB):
     return brng
 
 def visual_transform(lon_v, lat_v, camera_para, shape):
-    '''
-    '''
-    
+
     lon_cam = camera_para[0]
     lat_cam = camera_para[1]
     shoot_hdir = camera_para[2]
@@ -50,14 +44,15 @@ def visual_transform(lon_v, lat_v, camera_para, shape):
     u0  = camera_para[9]
     v0  = camera_para[10]
 
-    D_abs = count_distance((lat_cam, lon_cam), (lat_v, lon_v))
-    
+    D_abs = count_distance((lat_cam, lon_cam), (lat_v, lon_v)) 
     relative_angle = getDegree(lat_cam, lon_cam, lat_v, lon_v)
     Angle_hor = relative_angle - shoot_hdir
+
     if Angle_hor < -180:
         Angle_hor = Angle_hor + 360
     elif Angle_hor > 180:
         Angle_hor = Angle_hor - 360
+
     hor_rad = radians(Angle_hor)
     shv_rad = radians(-shoot_vdir)
     Z_w = D_abs*cos(hor_rad)
@@ -72,20 +67,13 @@ def visual_transform(lon_v, lat_v, camera_para, shape):
     
     #Angle_ver = 90 + shoot_vdir - math.degrees(math.atan(D_abs / height_cam))
 
-    
     #target_x1 = int(width_pic // 2 + width_pic * Angle_hor / FOV_hor)
     #target_y1 = int(height_pic // 2 + height_pic * Angle_ver / FOV_ver)
-
-
-
-
 
     return target_x, target_y
 
 def data_filter(ais, camera_para):
-    '''
-    '''
-    
+
     lon_cam = camera_para[0]
     lat_cam = camera_para[1]
     shoot_hdir = camera_para[2]
@@ -97,37 +85,26 @@ def data_filter(ais, camera_para):
     lon, lat = ais['lon'], ais['lat']
     D_abs = count_distance((lat_cam,lon_cam),(lat,lon))
     angle = getDegree(lat_cam, lon_cam, lat, lon)
-    in_angle = abs(shoot_hdir - angle) if abs(shoot_hdir -
-                        angle) < 180 else 360 - abs(shoot_hdir - angle)
+    in_angle = abs(shoot_hdir - angle) if abs(shoot_hdir - angle) < 180 else 360 - abs(shoot_hdir - angle)
 
     if 90 + shoot_vdir - FOV_ver / 2 < math.degrees(math.atan(D_abs / height_cam)):
-        # =============================================================================
-        
-        # =============================================================================
         
         if in_angle <= (FOV_hor / 2 + 8):  
             return 'transform'
         
         elif in_angle > (FOV_hor / 2 + 8):
             return 'visTraj_del'
-        # =============================================================================
-        
-        # =============================================================================
         
         if in_angle > (FOV_hor / 2 + 12):
             return 'ais_del'
 
 def transform(AIS_current, AIS_vis, camera_para, shape):
-    '''
-    '''
-    
-    AIS_visCurrent = pd.DataFrame(columns=['mmsi','lon',\
-                                'lat','speed','course','heading','type','x','y','timestamp'])
+
+    AIS_visCurrent = pd.DataFrame(columns=['mmsi','lon','lat','speed','course','heading','type','x','y','timestamp'])
     
     for index, ais in AIS_current.iterrows():
-        
+
         flag = data_filter(ais, camera_para)
-        
         if flag == 'transform':
             x, y = visual_transform(ais['lon'], ais['lat'], camera_para, shape)
             ais['x'], ais['y'] = x, y
@@ -138,9 +115,7 @@ def transform(AIS_current, AIS_vis, camera_para, shape):
     return AIS_vis, AIS_visCurrent
 
 def data_pre(ais, timestamp):
-    '''
-    '''
-    
+
     if ais['speed'] == 0:
         ais['timestamp'] = timestamp
     
@@ -178,8 +153,7 @@ def data_pred(AIS_cur, AIS_read, AIS_las, timestamp):
     return AIS_cur
 
 def data_coarse_process(AIS_current,AIS_last,camera_para,max_dis):
-    '''
-    '''
+
     camera_loc = (camera_para[1], camera_para[0])
     
     for index, ais in AIS_current.iterrows():
@@ -210,83 +184,57 @@ class AISPRO(object):
     def __init__(self, ais_path, ais_file, im_shape, t):
         
         self.ais_path = ais_path
-        
         self.ais_file = ais_file
-        
         self.im_shape = im_shape
-        
         self.max_dis  = 2*1852
-        
         self.t        = t
-        
         self.time_lim = 2
-        
-        self.AIS_cur  = pd.DataFrame(columns=['mmsi','lon','lat','speed',\
-                                              'course','heading','type','timestamp'])
-        
-        # self.AIS_row  = pd.DataFrame(columns=['mmsi','lon','lat','speed',\
-        #                                       'course','heading','time'])
-        
-        # self.AIS_pre  = pd.DataFrame(columns=['mmsi','lon','lat','speed',\
-                                              # 'course','heading','time'])
-        
-        self.AIS_vis  = pd.DataFrame(columns=['mmsi','lon','lat','speed',\
-                                              'course','heading','type','x','y','timestamp'])
+        self.AIS_cur  = pd.DataFrame(columns=['mmsi','lon','lat','speed','course','heading','type','timestamp'])
+        # self.AIS_row  = pd.DataFrame(columns=['mmsi','lon','lat','speed','course','heading','time'])
+        # self.AIS_pre  = pd.DataFrame(columns=['mmsi','lon','lat','speed','course','heading','time'])
+        self.AIS_vis  = pd.DataFrame(columns=['mmsi','lon','lat','speed','course','heading','type','x','y','timestamp'])
+    
     def initialization(self):
         
         AIS_las = self.AIS_cur
         AIS_vis = self.AIS_vis
-        AIS_cur = pd.DataFrame(columns=['mmsi','lon',\
-                                    'lat','speed','course','heading','type','timestamp'])
+        AIS_cur = pd.DataFrame(columns=['mmsi','lon','lat','speed','course','heading','type','timestamp'])
         return AIS_cur, AIS_las, AIS_vis
     
     def read_ais(self, Time_name):
+
         try:
-            
             path = self.ais_path + '/' + Time_name + '.csv'
             ais_data = pd.read_csv(path, usecols=[1, 2, 3, 4, 5, 6, 7, 8], header=0)
             # self.AIS_row = self.AIS_row.append(ais_data, ignore_index=True)
         except:
-            ais_data = pd.DataFrame(columns=['mmsi','lon',\
-                                    'lat','speed','course','heading','type','timestamp'])
+            ais_data = pd.DataFrame(columns=['mmsi','lon','lat','speed','course','heading','type','timestamp'])
         return ais_data
     
     def data_tran(self, AIS_cur, AIS_vis, camera_para, timestamp):
-        
-        AIS_vis, AIS_vis_cur = transform(AIS_cur,\
-                            AIS_vis, camera_para, self.im_shape)
+
+        AIS_vis, AIS_vis_cur = transform(AIS_cur, AIS_vis, camera_para, self.im_shape)
 
         # self.AIS_pre = self.AIS_pre.append(self.AIS_cur, ignore_index=True)
         AIS_vis = pd.concat([AIS_vis, AIS_vis_cur], ignore_index=True)
         
-        # self.AIS_pre = self.AIS_pre.drop(self.AIS_pre[self.AIS_pre['time'] < (
-        #     timestamp // 1000 - self.time_lim * 60)].index)
+        # self.AIS_pre = self.AIS_pre.drop(self.AIS_pre[self.AIS_pre['time'] < (timestamp // 1000 - self.time_lim * 60)].index)
         AIS_vis = AIS_vis.drop(AIS_vis[AIS_vis['timestamp'] < (
                 timestamp//1000 - self.time_lim * 60)].index)
         return AIS_vis
     
     def ais_pro(self, AIS_cur, AIS_las, AIS_vis, camera_para, timestamp, Time_name):
 
-        AIS_read = self.read_ais(Time_name)
-                
-        AIS_read = data_coarse_process(AIS_read, AIS_las,\
-                                      camera_para, self.max_dis)
-                
+        AIS_read = self.read_ais(Time_name)      
+        AIS_read = data_coarse_process(AIS_read, AIS_las,camera_para, self.max_dis)
         AIS_cur = data_pred(AIS_cur, AIS_read, AIS_las, timestamp)
-            
-        AIS_vis = self.data_tran(AIS_cur, AIS_vis,\
-                                      camera_para, timestamp)
+        AIS_vis = self.data_tran(AIS_cur, AIS_vis,camera_para, timestamp)
         return AIS_vis, AIS_cur
     
     def process(self, camera_para, timestamp, Time_name):
         
         if timestamp % 1000 < self.t:
             Time_name = Time_name[:-4]
-            
             AIS_cur, AIS_las, AIS_vis = self.initialization()
-            
-            self.AIS_vis, self.AIS_cur = self.ais_pro(AIS_cur,\
-                                AIS_las, AIS_vis, camera_para, timestamp, Time_name)
-            
+            self.AIS_vis, self.AIS_cur = self.ais_pro(AIS_cur,AIS_las, AIS_vis, camera_para, timestamp, Time_name)
         return self.AIS_vis, self.AIS_cur
-
