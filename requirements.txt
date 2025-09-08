@@ -1,0 +1,12 @@
+fastdtw
+geopy
+numpy
+opencv-python
+pandas
+imutils
+python-docx
+scipy
+matplotlib
+Pillow
+psutil
+pynvml
