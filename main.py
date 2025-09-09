@@ -8,7 +8,28 @@ from utils.FUS_utils import FUSPRO
 from utils.gen_result import gen_result
 from utils.draw import DRAW
 
+# Performance monitoring
+##
+try:
+    import sys
+    sys.path.append('.')
+    from performance_monitor import PerformanceMonitor
+    MONITOR_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️  Performance monitor not available: {e}")
+    print("   pip install psutil GPUtil")
+    MONITOR_AVAILABLE = False
+##
+
 def main(arg):
+    # Performance monitoring başlat
+    ##
+    monitor = None
+    if MONITOR_AVAILABLE and hasattr(arg, 'monitor') and arg.monitor:
+        monitor = PerformanceMonitor(f"deepsorvf_performance_{int(time.time())}.csv")
+        monitor.start_monitoring()
+    ##
+
     ais_file, timestamp0, time0 = ais_initial(arg.ais_path, arg.initial_time)
     Time = arg.initial_time.copy()
     
@@ -77,11 +98,19 @@ def main(arg):
     videoWriter.release()
     cv2.destroyAllWindows()
     
+    # Performance monitoring durdur
+    ##
+    if monitor:
+        print("\n⏹️  Performance monitoring durduruluyor...")
+        monitor.stop_monitoring()
+    ##
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description = "DeepSORVF")
     
     parser.add_argument("--anti", type=int, default = 1, help='anti-occlusion True/1|False/0')
     parser.add_argument("--anti_rate", type=int, default = 0, help='occlusion rate 0-1')
+    parser.add_argument("--monitor", action='store_true', help='enable performance monitoring') ##
     parser.add_argument("--data_path", type=str, default = './clip-01/', help='data path')
     parser.add_argument("--result_path", type=str, default = './result/', help='result path')
     

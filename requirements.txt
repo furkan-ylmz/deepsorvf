@@ -9,4 +9,6 @@ scipy
 matplotlib
 Pillow
 psutil
+GPUtil
+psutil
 pynvml
