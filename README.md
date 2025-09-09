@@ -1,122 +1,247 @@
-# DeepSORVF Kod İşleyiş Dokümantasyonu
+## Genel İşleyiş Özeti
 
-Bu doküman sadece kodun çalışma akışını ve fonksiyonların NEDEN var olduklarını açıklar. Kurulum, parametre listesi gibi bölümler (8. madde ve sonrası) çıkarılmıştır. Amaç: Kodu ilk gören birinin dosyalar arasında kaybolmadan mantığı takip edebilmesi.
+DeepSORVF: Video görüntüleri (gemi kamerası) ile AIS verilerini eşleştirip, görsel tespitleri (YOLO) çoklu-nesne izleme (DeepSort) ile izleyip, AIS konum/özellikleriyle zaman-serisi benzerliği (DTW) ve atama (Hungarian) kullanarak görsel nesne ID ↔ MMSI (AIS) eşleştirmesi yapan bir füzyon boru hattıdır. Çıktı: anotasyonlu video + detection / tracking / fusion CSV metrikleri.
 
-## 1. Amaç
-Deniz üzerindeki gemileri **görsel tespit (YOLOX + DeepSORT)** ve **AIS (Automatic Identification System)** verilerini zamansal ve mekânsal olarak hizalayıp eşleştirerek tekil gerçek dünya kimlikleriyle izlemek. Fusion süreci; iki farklı kaynaktan gelen (kamera + AIS) trajeleri aynı fiziksel gemiye ait olup olmadıklarına göre birleştirir.
+Kısa giriş-akışı:
+- Program `main.py` ile başlar.
+- Her karede zaman güncellenir.
+- AIS okunur ve projeksiyonla piksel koordinatına çevrilir (AISPRO).
+- YOLO ile tespit (VISPRO.detection).
+- DeepSort ile izleme (VISPRO.track / update_tra).
+- DTW + Hungarian ile AIS ↔ VIS traj eşleme (FUSPRO.fusion).
+- Sonuçlar yazılır, overlay çizilir (DRAW).
 
-## 2. En Üst Düzey Döngü Mantığı
-`main.py` içindeki ana while döngüsü her video karesinde şu sırayı takip eder:
-1. Frame oku
-2. Mantıksal zaman & timestamp güncelle (`update_time`)
-3. Yeni saniyeye girildiyse AIS işleme (`AIS.process`)
-4. Görsel pipeline (tespit + takip) (`VIS.feedCap`)
-5. Yeni saniyeye girildiyse fusion (`FUS.fusion`)
-6. Yeni saniyede sonuç CSV yazımı (`gen_result`)
-7. Çizim & overlay (`DRAW.draw_traj`)
-8. Video kaydı / gösterim
+## Adım Adım İşlem Hattı Açıklaması
 
-Temel prensip: AIS ve fusion yalnızca saniye sınırında (timestamp milisaniyesi < t eşiği) çalıştırılır, görsel tespit ise her karede yapılabilir.
+Aşağıda ana adımları, çağrı sırasını, her fonksiyonun ne yaptığını ve kullanılan veri şekillerini (kısaca) veriyorum.
+
+1) Program başlangıcı
+- Dosya: `main.py`
+- Giriş noktası: `if __name__ == '__main__'` -> argparse ile argümanlar hazırlanır.
+- `read_all(data_path, result_path)` çağrılır (`utils/file_read.py`) → video dosyası, ais klasörü, başlangıç zaman listesi (`initial_time`), `camera_para` okunur. Dönenler `video_path, ais_path, result_video, result_metric, initial_time, camera_para`.
+
+2) main(arg) başlatılır
+- Video açılır: `cap = cv2.VideoCapture(arg.video_path)`; `im_shape` (frame genişlik/yükseklik) ve fps alınır.
+- Nesne örnekleri oluşturulur:
+  - `AIS = AISPRO(arg.ais_path, ais_file, im_shape, t)` (AIS veri işleme)
+  - `VIS = VISPRO(arg.anti, arg.anti_rate, t)` (görsel tespit + izleme)
+  - `FUS = FUSPRO(max_dis, im_shape, t)` (füzyon/eşleştirme)
+  - `DRA = DRAW(im_shape, t)` (görselleştirme)
+
+3) Ana frame döngüsü (while True: per-frame)
+Her döngü:
+- Kare okunur `im = cap.read()`
+- Zaman güncellemesi: `Time, timestamp, Time_name = update_time(Time, t)` (`utils/file_read.time2stamp` ve `update_time`)
+  - Burada `timestamp` milisaniye cinsinden frame stamp'idir.
+- AIS işleme: `AIS_vis, AIS_cur = AIS.process(camera_para, timestamp, Time_name)`
+  - AISPRO.process:
+    - Eğer timestamp uygunsa (`timestamp % 1000 < t`) -> `ais_pro` çağrılır.
+    - ais_pro:
+      - `read_ais(Time_name)` : o timestamp için CSV dosyasını okur (varsa).
+      - `data_coarse_process` : AIS verilerini kaba filtre (anormal konum/speed/dis limitleri).
+      - `data_pred` : AIS verilerinin timestamp'a göre öngörüsü / zaman düzeltmesi; (kodda 5 saat offset ekleniyor).
+      - `data_tran` -> `transform` : lokasyon (lon/lat) → görüntü koordinatına dönüşüm (`visual_transform`).
+        - `visual_transform` matematiği: kamera parametreleri (kamera lon/lat, çekim yönleri, yükseklik, FOV, odak) ve coğrafi uzaklık kullanılarak piksel (x,y) hesaplanır.
+      - Dönen: `AIS_vis` (görüntü-uzaydaki AIS gözlemleri) ve `AIS_cur` (o anki AIS listesi).
+- Görsel işlem: `Vis_tra, Vis_cur = VIS.feedCap(im, timestamp, AIS_vis, bin_inf)`
+  - VISPRO.feedCap:
+    - Her T (saniyeye göre ayarlanan) adımda:
+      - `detection(image)` -> `yolo.detect_image(im0)` (YOLO tespiti): çıktı bboxes listesi [(x1,y1,x2,y2,label,conf), ...]
+      - `anti_occ(...)` -> anti-occlusion mantığı:
+        - `OAR_extractor` ile geçmiş 5-frame'teki görsel trajlardan potansiyel OAR (occlusion areas) çıkarılır.
+        - Eğer AIS verisi varsa OAR içindeki gemilerin AIS'ine bakılarak tahmini anti-occluded bounding box üretilir (prediction via AIS veya traj pred).
+      - `track(image, bboxes, bboxes_anti_occ, id_list, timestamp)`:
+        - YOLO bbox'larını merkeze-xywh dönüşümü ile DeepSort'a (`deepsort.update(...)`) gönderir.
+        - `deepsort.update` -> kalman + reid + nms + association (DeepSort kütüphanesi)
+        - Çıktı (x1,y1,x2,y2,score, track_id) ile geçici `Vis_tra_cur_3` tablosuna eklenir.
+      - `update_tra`:
+        - `Vis_tra_cur_3`'teki aynı ID'ler için ortalama alır (smoothing), `Vis_tra_cur` oluşturur.
+        - `motion_features_extraction` ile hız (speed) özelliği hesaplanır (son ve önceki trajlar karşılaştırılarak).
+        - `last5_vis_tra_list` güncellenir (geçmiş 5 periyod).
+    - Döner: `Vis_tra` (tüm görsel traj veritabanı), `Vis_cur` (o anki ilgili görsel objeler)
+- Füzyon: `Fus_tra, bin_inf = FUS.fusion(AIS_vis, AIS_cur, Vis_tra, Vis_cur, timestamp)`
+  - FUSPRO.fusion:
+    - `traj_group(...)` ile AIS_vis ve Vis_tra içindeki trajleri zaman-uygunluk şartına göre listelere çevirir (her biri için numpy array halinde [ [x,y], ... ]).
+    - `cal_similarity` -> matrisi oluşturur:
+      - İkili benzerlik: önce angular yön farkı hesaplanır (angle function).
+      - Eğer uzaklık < max_dis ve açı toleransı sağlanırsa `DTW_fast(VIS_traj, AIS_traj)` çağrılır:
+        - `DTW_fast` => `fastdtw` ile zaman-alignment mesafesi hesaplanır ve açı faktörü ile ağırlıklandırılır.
+        - `fastdtw` (approx DTW) zaman serileri (traj noktaları) için esnek eşleme sağlar.
+      - Çıktı: benzerlik (mesafe) matrisi (büyük mesafe -> aralarında eşleştirme uygun değil).
+    - `linear_assignment(matrix_S)` (Hungarian) ile en iyi satır-sütun eşleşmeleri bulunur.
+    - `data_filter` ile eşleşmeler mesafe/açı eşiklerine göre temizlenir.
+    - `save_data` ile eşleşmeler `mat_list` (fusion list) ve `mat_cur` / `bin_cur` (kıdemli eşleşmeler) olarak kaydedilir.
+  - Döner: `mat_list` (eşleştirilmiş AIS↔VIS kayıtları), `bin_cur` (güvenli eşleşmeler)
+- Sonuç üretme: zaman işaretlerinde `gen_result(times, Vis_cur, Fus_tra, arg.result_metric, im_shape)` çağrılır:
+  - `gen_result` CSV'lere yazma: detection, tracking, fusion dosyalarını append eder.
+- Görselleştirme: `im = DRA.draw_traj(im, AIS_vis, AIS_cur, Vis_tra, Vis_cur, Fus_tra, timestamp)`
+  - DRAW.draw_traj:
+    - `fusion_list` içindeki her eşleştirme için kutu/inf kutusu oluşturur (`process_img`) ve `draw` ile görüntü üzerine kutular, metinler, bağlantı çizgileri çizer.
+  - VideoWriter ile karesel sonuç yazılır ve OpenCV ile gösterilir.
+
+4) Döngü sonu/temizlik
+- Döngü bitince `cap.release()`, `videoWriter.release()`, `cv2.destroyAllWindows()` çağrılır.
+
+Veri yapıları (kısaca):
+- AIS dataframe: kolonlar ['mmsi','lon','lat','speed','course','heading','type','timestamp','x','y']
+- VIS dataframe: kolonlar ['ID','x1','y1','x2','y2','x','y','timestamp','speed']
+- mat_list / fusion: birleştirilmiş eşleştirme satırları (ID, mmsi, x1,y1,w,h,timestamp,...)
+
+## Kullanılan Algoritmalar ve Gerekçeleri (teknik + anlaşılır)
+
+Aşağıda projede kullanılan ana algoritmalar, ne işe yaradıkları, neden seçildikleri ve çalışma mantıkları açıklanmıştır.
+
+1) YOLO (You Only Look Once) — Nesne Tespiti
+- Nerede: `detection_yolox/yolo.py` üzerinden `VISPRO.detection()` çağrısı ile.
+- Neden: YOLO, tek geçişte hızlı bounding-box tespiti sağlar; gerçek zamanlı uygulamalarda FPS/sürat ön planda.
+- Nasıl çalışır (özet):
+  - Görüntü bir grid'e bölünür, ağ tek seferde her hücre için sınıf ve kutu tahmini üretir.
+  - Konsept olarak daha eski R-CNN'lere göre çok daha hızlıdır; doğruluk / hız dengesi iyidir.
+- Projede rolü: Her görüntü anında gemi kutularını çıkartmak (x1,y1,x2,y2,conf,label).
+
+2) DeepSort (Kalman + ReID + Association) — Çoklu Nesne İzleme
+- Nerede: `deep_sort` modülü, `VISPRO.track()` çağrısı `deepsort.update(...)`.
+- Neden: DeepSort, tespitler üstünde kimlik koruyan online takip yapar; ReID ile kısa süreli kayıpları tolere etme ve Kalman filtre ile pozisyon öngörüsü sağlar.
+- Nasıl çalışır (özet):
+  - Her framede tespitler Kalman filtresi ile hareket tahmine göre eşleştirilir.
+  - Görünüm-temelli ReID (özellik vektörleri) ile benzerlik hesaplanır; association (IoU + appearance) yapılır.
+  - Yeni ID'ler atanır, ölü/kapalı track'ler silinir.
+- Projedeki rolü: Görsel detections için stabil, sürekli ID ataması; VIS trajelerinin oluşmasını sağlar.
+
+3) DTW (Dynamic Time Warping) — Zaman Serisi Benzerliği
+- Nerede: `FUS_utils.DTW_fast` -> `fastdtw` kullanan fonksiyon.
+- Neden: AIS trajeleri ve görsel trajeler farklı örnekleme hızlarında olabilir; DTW zaman-haritalama ile iki trajeyi esnek şekilde eşler (farklı hızlardaki eşdeğer hareketleri tayin eder).
+- Nasıl çalışır (özet, anlaşılır):
+  - İki zaman-serisini zamana göre hizalamaya izin vererek en kısa toplam mesafeyi bulur.
+  - fastdtw, klasik DTW'ye göre daha hızlı, yaklaşık bir yöntem; büyük trajiler için tercih edilir.
+- Projedeki rolü: Görsel trajeler ile AIS trajeleri arasındaki benzerlik (mesafe) skorunu hesaplamak.
+
+4) Hungarian (Linear Assignment) — Optimal Atama
+- Nerede: `scipy.optimize.linear_sum_assignment` (linear_assignment) kullanımı `FUSPRO.traj_match`.
+- Neden: Birçok görsel ve AIS trajesi olduğunda, eşleştirmeleri küresel optimuma göre çözmek gerekir; Hungarian algoritması min-cost matching sağlar.
+- Nasıl çalışır:
+  - Benzerlik/mesafe matrisi verilir; algoritma eşleştirmelerin toplam maliyetini en aza indirecek satır-sütun eşleşmesini verir.
+- Projedeki rolü: VIS ↔ AIS eşleştirmelerini küresel olarak optimum şekilde belirlemek.
+
+5) Coğrafi Dönüşüm & Görsel Projeksiyon (geopy, pyproj, custom math)
+- Nerede: `AIS_utils.visual_transform`, `transform`, `data_filter`
+- Neden: AIS verileri lon/lat cinsindendir; bunları kamera görüntüsü koordinatına (piksel) çevirmek gerekir.
+- Nasıl çalışır:
+  - coğrafi uzaklık (geodesic) ve yön (getDegree) hesaplanır.
+  - Kamera parametreleri (kamera lon/lat, çekim horizontal/vertical yönleri, yükseklik, FOV, odak f_x/f_y ve principal point u0/v0) kullanılarak basit bir perspektif hesaplaması uygulanır.
+  - Sonuç: AIS noktasının beklenen piksel (x,y).
+- Projedeki rolü: AIS noktalarının görüntüyle hizalanması; anti-occlusion için AIS'ten tahmini bbox üretimi.
+
+6) Hız/Özellik Çıkarımı ve Anti-Occlusion Mantığı
+- VISPRO.motion_features_extraction, anti_occ, OAR_extractor
+- Neden: Kısa süreli kapamalar (occlusion) olduğunda, geçmiş trajlara ve AIS'e bakarak eksik görsel tespitleri tahmin etmek için.
+- Nasıl çalışır:
+  - Son 5 görsel periyodun trajları tutulur; OAR (occlusion areas) çıkarılır.
+  - Eğer AIS var ise AIS'e bakarak pozisyon hareketinden anti-occlusion bounding box'ı hesaplanır; yoksa görsel hız ile lineer tahmin yapılır.
+- Projedeki rolü: Görsel takip sürekliliğini iyileştirme, kısa süreli kayıpları telafi etme.
+
+7) Diğer yardımcı yaklaşımlar
+- Filtreleme: data_coarse_process ile AIS'te anormal veriler atılıyor (hatalı GPS, aşırı hız vs).
+- Zaman düzeltmesi: AIS zamanlarında ofsetler düzeltiliyor (kodda 5 saat olarak eklenmiş).
+- Görselleştirme: draw.py kutu çizimi, inf box, metin ekleme, sıralı inf yerleşimi.
+
+Edge-case / dikkat edilmesi gerekenler:
+- AIS zaman offset'i kodda sabit +5 saat uygulanmış — gerçek veri setine göre kontrol edilmeli.
+- Kamera parametreleri hassas: yanlış parametreler AIS→piksel dönüşümünü bozar.
+- DTW ve fastdtw parametreleri performans/kayıp dengesini etkiler (uzun trajiler maliyetli).
+- DeepSort ReID checkpoint ve CUDA gereksinimi var (kod deepsort'u GPU ile çağırıyor).
 
 ---
-## 3. Fonksiyonel Ayrıntılar (NEDEN / NASIL)
 
-### 3.1 Giriş & Zaman Yönetimi (`utils/file_read.py`)
-- `read_all(data_path, result_path)`: Video dosyasını, AIS klasörünü, çıktı dizinlerini ve kamera parametre dosyasını bulur. Neden: Tüm pipeline tek merkezli yapılandırma bilgisine ihtiyaç duyar.
-- `ais_initial(ais_path)`: AIS CSV dosyalarının listesini ve ilk zaman etiketini çıkarır. Neden: Saniye bazlı erişimde dizin taramasını her döngüde tekrar etmemek.
-- `update_time(Time, t)`: Frame sayacından milisaniye bazında ilerleyerek yeni bir tam saniyeye geçtiğimiz anı belirler. Neden: AIS ve fusion işlemlerinin yalnızca saniye başında tetiklenebilmesi.
-- `time2stamp(hhmmss)`: İnsan okunur zaman → milisaniye epoch. Neden: Farklı kaynaklardan gelen zaman formatlarını normalize etmek.
+## Sequence Diagram
 
-### 3.2 AIS İşleme Zinciri (`utils/AIS_utils.py`)
-Ana giriş noktası: `AISPRO.process(camera_para, timestamp, Time_name)`
-Bu fonksiyon yalnızca yeni saniye tetik koşulunda çalışır (fazladan hesap yükünü engeller).
+![Sequence Diagram](sequence_diagram.png)
 
-Adımlar:
-1. `initialization()`: Geçici listeleri temizler. Neden: Saniyelik state kalıntılarının yeni okunan veriyle karışmasını önlemek.
-2. `ais_pro(...)`: İç içe iş akışı.
-   - `read_ais(Time_name)`: O saniyeye ait CSV var mı? Varsa satırları okuyup parse eder. Neden: Gerçek zamanlı akışın dosya tabanlı simülasyonu.
-   - `data_coarse_process(AIS_read, AIS_las, camera_para, max_dis)`: Hatalı / aşırı uzak / hız mantıksız kayıtlar elenir. Neden: Fusion maliyet matrisinin kirlenmesini ve yanlış pozitifleri azaltmak.
-   - `data_pred(AIS_cur, AIS_read, AIS_las, timestamp)`: (a) TIME_OFFSET düzeltmesi (örn. +5h fark) (b) Eksik saniyeleri son iki geçerli noktanın hızı ve kursuyla ileri projekte eder (`data_pre`). Neden: Kamera ve AIS zaman drift’i & paket kayıplarına karşı sürekli trajekte tutarlılık.
-   - `data_tran(...)` → `transform()` + `visual_transform()`: Coğrafi (lat/lon) → düzlemsel piksel koordinatı. Bearing + mesafe + kamera parametresi kullanır. Neden: Görsel uzay ile sayısal navigasyon verisini aynı koordinat sistemine getirmek.
-Çıktılar: `AIS_cur` (ham senkronize edilmiş), `AIS_vis` (piksel lokasyonlu).
+*Fonksiyonlar ve sınıflar arasındaki çağrı sırasını gösteren UML sequence diyagramı*
 
-Kritik Nokta: Hız 0 iken yön bilgisi (course) gürültülü olabilir; filtre bunu dikkate alır veya prediction kısmı durur.
+<details>
+<summary>PlantUML Kaynak Kodu</summary>
 
-### 3.3 Görsel Pipeline (`utils/VIS_utils.py`)
-Giriş noktası: `VISPRO.feedCap(frame, timestamp, AIS_vis, bin_inf)`
+```plantuml
+@startuml
+actor User
+participant main as "main.py"
+participant FileRead as "utils/file_read"
+participant AISPRO as "AISPRO"
+participant VISPRO as "VISPRO"
+participant YOLO as "YOLO"
+participant DeepSort as "DeepSort"
+participant FUSPRO as "FUSPRO"
+participant DTW as "fastdtw/DTW_fast"
+participant Hungarian as "linear_assignment"
+participant DRAW as "DRAW"
+participant gen_result as "gen_result"
 
-Adımlar:
-1. `detection()`: YOLOX modeli çalışır, gemi aday kutuları çıkar. Neden: Ham görsel akıştan potansiyel hedefleri izole etmek.
-2. `anti_occ(...)`: Örtüşen kutuları ve olası kaybolan hedefleri analiz eder (tamamlanmamış logic). Neden: Geçici kayıplarda kimlik sürekliliğini koruma hedefi.
-3. `track(...)`: DeepSORT; her tespit için appearance + motion (Kalman) bileşimi ile ID ataması yapar. Neden: Kutu dizisini zamansal kimlik dizisine dönüştürmek.
-4. `update_tra(...)`: Yeni saniyede gerçekleşir; aynı ID'nin o saniyedeki çoklu örnekleri ortalanır; `motion_features_extraction` ile hız / yön çıkarılır. Neden: Fusion için daha kararlı saniyelik temsil üretmek.
+User -> main : çalıştır()
+main -> FileRead : read_all(data_path, result_path)
+main -> main : parse args, create AISPRO/VISPRO/FUSPRO/DRAW
+main -> main : open video, loop per frame
 
-Çıktılar: `Vis_cur` (o karedeki ID'ler), `Vis_tra` (son ~2 dakikalık geçmiş penceresi). Bu geçmiş pencere DTW hesaplarında dokusuz (sparse) yerine yoğun (dense) örnek sunar.
+loop per frame
+  main -> FileRead : update_time()
+  main -> AISPRO : process(camera_para, timestamp, Time_name)
+  AISPRO -> AISPRO : read_ais -> data_coarse_process -> data_pred
+  AISPRO -> AISPRO : transform (visual_transform) -> AIS_vis, AIS_cur
+  main -> VISPRO : feedCap(image, timestamp, AIS_vis, bin_inf)
+  VISPRO -> YOLO : detect_image(image)  // bounding boxes
+  VISPRO -> VISPRO : anti_occ(...)      // OAR extractor & predictions
+  VISPRO -> DeepSort : deepsort.update(xywhs, confs, ...)
+  DeepSort -> VISPRO : tracked outputs (x1,y1,x2,y2,track_id)
+  VISPRO -> VISPRO : update_tra (aggregate -> Vis_tra, compute speed)
+  main -> FUSPRO : fusion(AIS_vis, AIS_cur, Vis_tra, Vis_cur, timestamp)
+  FUSPRO -> FUSPRO : traj_group (AIS_list, VIS_list)
+  FUSPRO -> DTW : DTW_fast for candidate pairs
+  FUSPRO -> Hungarian : linear_assignment(matrix_S)
+  FUSPRO -> FUSPRO : data_filter, save_data -> mat_list, bin_cur
+  main -> gen_result : gen_result(frame, Vis_cur, mat_list, result_metric)
+  main -> DRAW : draw_traj(im, AIS_vis, AIS_cur, Vis_tra, Vis_cur, mat_list, timestamp)
+  DRAW -> main : annotated image
+end
 
-### 3.4 Fusion (`utils/FUS_utils.py`)
-Giriş: `FUSPRO.fusion(AIS_vis, AIS_cur, Vis_tra, Vis_cur, timestamp)`
+main -> main : write frame to output video, show window
+main -> main : cleanup (release)
+@enduml
+```
+</details>
 
-Alt Akış:
-1. `traj_group(... 'AIS')` ve `traj_group(... 'VIS')`: Her kimlik için zaman sıralı (x,y) noktalar listesini derler. Neden: DTW gibi sekans tabanlı karşılaştırmalar için ham nokta akışını gruplamak.
-2. `traj_match(...)`: Orkestrasyon.
-   - `initialization()`: Önceki saniyeden gelen eşleşme geçmişini (`mat_las`) alır; uzun vadeli istikrar için gerekli.
-   - `cal_similarity()`: Her VIS–AIS çifti için:
-     * Son konum mesafesi (gating) – çok uzaksa yüksek maliyet.
-     * `angle()` ile yön farkı – aşırı sapmalar cezalandırılır.
-     * `DTW_fast()`: Sekansları önce downsample eder (`__reduce_by_half`), ardından fastdtw ile yol maliyeti bulur, açı penalti uygulayarak nihai skor üretir.
-     * Önceden bağlanmış çiftlere negatif offset (süreklilik ödülü).
-   - Hungarian (`linear_assignment`) ile toplam maliyet minimizasyonu.
-   - `data_filter(...)`: İkincil sert eşikler (mesafe < max_dis, açı < limit) – yanlış pozitif süzgeci.
-   - `save_data(...)`: Eşleşme sayaçlarını (match count) günceller, geçici kayıplara tolerans tanır (fog tolerance). Neden: Kısa süreli occlusion sırasında ilişkiyi koparmamak.
-Çıktılar: `mat_list` (saniyelik fusion kayıtları), `bin_cur` (aktif bağlar tablosu).
+---
 
-### 3.5 Çizim (`utils/draw.py`)
-- `draw_traj(...)`: Her görsel ID'yi işler, eğer `bin_cur` ile bir AIS eşleşmesi varsa kutuyu ve metni sarı renkte; yoksa kırmızı renkte çizer. Neden: Operatöre durumu hızlı görsel geri bildirimle iletmek.
-- Yardımcılar `draw_box`, `draw_line`: Görsel bütünlük ve okunabilirlik için basit overlay araçları.
+## Flowchart
 
-### 3.6 Sonuç Kaydı (`utils/gen_result.py`)
-- `gen_result(...)`: Üç CSV setini saniye bazında append eder: detection (ham kare tespitleri), tracking (ID'li kutular), fusion (AIS ile zenginleştirilmiş ID'ler). Neden: Post-analiz, metrik hesaplama ve hata ayıklama.
+![Flowchart](flowchart.png)
 
-## 4. Önemli Veri Yapıları
-- AIS satırı: `[mmsi, lon, lat, speed, course, heading, type, timestamp, x, y]`
-- Visual track satırı: `[ID, x1, y1, x2, y2, x, y, speed, timestamp]`
-- Fusion çıktı satırı: `[ID, mmsi, lon, lat, speed, course, heading, type, x1, y1, w, h, timestamp]`
-- Binding (`bin_cur`): `[ID, mmsi, timestamp, match]`
+*Genel işleyişi kutucuklar ve karar yapıları ile gösteren akış diyagramı*
 
-## 5. Fusion Karar Kuralları (Kısa)
-1. Geometrik yakınlık ve yön uyumu ilk kapı.
-2. Zaman serisi benzerliği DTW ile ölçülür (ölçek & açı cezalı).
-3. Hungarian ile global optimum eşleşme.
-4. Son sert kapı + istikrar puanı (match count) → nihai bağ.
-5. Kısa kayıplar toleransla tutulur (fog tolerance).
+<details>
+<summary>Mermaid Kaynak Kodu</summary>
 
-Mermaid Kaynağı:
 ```mermaid
 flowchart TD
-    A[Start] --> B[read_all & ais_initial]
-    B --> C[Open Video]
-    C --> D{Read Frame}
-    D -->|None| Z[End]
-    D --> E[update_time]
-    E --> F{New Second?}
-    F -->|Yes| G[AIS.process]
-    F -->|No| H[VIS.feedCap]
-    G --> H[VIS.feedCap]
-    H --> I{New Second?}
-    I -->|Yes| J[FUS.fusion]
-    I -->|No| K[draw_traj]
-    J --> L[gen_result]
-    L --> K[draw_traj]
-    K --> M[Write/Show]
-    M --> D
+  A[Baslat main.py argparse read_all] --> B[Video ac ve init moduller AISPRO VISPRO FUSPRO DRAW]
+  B --> C{Kare oku loop}
+  C -->|EOF| Z[Temizle bitir]
+  C --> D[update_time]
+  D --> E[AISPRO process]
+  E --> E1[read_ais data_coarse_process data_pred]
+  E1 --> E2[transform geo to pixel AIS_vis AIS_cur]
+  D --> F[VISPRO feedCap]
+  F --> F1[YOLO detect_image bboxes]
+  F --> F2[anti_occ OAR_extractor AIS prediction]
+  F1 & F2 --> G[DeepSort update tracked outputs]
+  G --> H[update_tra Vis_tra compute speed last5 list]
+  H --> I[FUSPRO fusion]
+  I --> I1[traj_group build AIS_list VIS_list]
+  I1 --> I2[cal_similarity angle DTW_fast cost matrix]
+  I2 --> I3[Hungarian linear_assignment matches]
+  I3 --> I4[data_filter save_data mat_list bin_cur]
+  I4 --> J[gen_result frame Vis_cur mat_list]
+  J --> K[DRAW draw_traj annotated frame]
+  K --> L[write to video imshow key checks]
+  L --> C
 ```
-
-ASCII Özet:
-```
-Frame -> update_time -> (sec?) AIS.process -> VIS.feedCap -> (sec?) FUS.fusion -> (sec?) gen_result -> draw_traj -> output -> next frame
-```
-
-## 6. Neden DTW + Hungarian?
-- DTW: Farklı hız / ufak zaman kaymaları olsa bile yol şeklinin (trajectory pattern) benzerliğini ölçer.
-- Hungarian: Tüm VIS ↔ AIS aday çiftleri aynı anda optimize ederek lokal hatalı seçimi engeller.
-- Birlikte: Gürültülü tek frame uzaklıklarına dayanmak yerine sekans bağlamı + global optimizasyon.
+</details>
