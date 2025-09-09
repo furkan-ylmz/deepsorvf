@@ -159,56 +159,6 @@ Edge-case / dikkat edilmesi gerekenler:
 
 *Fonksiyonlar ve sınıflar arasındaki çağrı sırasını gösteren UML sequence diyagramı*
 
-<details>
-<summary>PlantUML Kaynak Kodu</summary>
-
-```plantuml
-@startuml
-actor User
-participant main as "main.py"
-participant FileRead as "utils/file_read"
-participant AISPRO as "AISPRO"
-participant VISPRO as "VISPRO"
-participant YOLO as "YOLO"
-participant DeepSort as "DeepSort"
-participant FUSPRO as "FUSPRO"
-participant DTW as "fastdtw/DTW_fast"
-participant Hungarian as "linear_assignment"
-participant DRAW as "DRAW"
-participant gen_result as "gen_result"
-
-User -> main : çalıştır()
-main -> FileRead : read_all(data_path, result_path)
-main -> main : parse args, create AISPRO/VISPRO/FUSPRO/DRAW
-main -> main : open video, loop per frame
-
-loop per frame
-  main -> FileRead : update_time()
-  main -> AISPRO : process(camera_para, timestamp, Time_name)
-  AISPRO -> AISPRO : read_ais -> data_coarse_process -> data_pred
-  AISPRO -> AISPRO : transform (visual_transform) -> AIS_vis, AIS_cur
-  main -> VISPRO : feedCap(image, timestamp, AIS_vis, bin_inf)
-  VISPRO -> YOLO : detect_image(image)  // bounding boxes
-  VISPRO -> VISPRO : anti_occ(...)      // OAR extractor & predictions
-  VISPRO -> DeepSort : deepsort.update(xywhs, confs, ...)
-  DeepSort -> VISPRO : tracked outputs (x1,y1,x2,y2,track_id)
-  VISPRO -> VISPRO : update_tra (aggregate -> Vis_tra, compute speed)
-  main -> FUSPRO : fusion(AIS_vis, AIS_cur, Vis_tra, Vis_cur, timestamp)
-  FUSPRO -> FUSPRO : traj_group (AIS_list, VIS_list)
-  FUSPRO -> DTW : DTW_fast for candidate pairs
-  FUSPRO -> Hungarian : linear_assignment(matrix_S)
-  FUSPRO -> FUSPRO : data_filter, save_data -> mat_list, bin_cur
-  main -> gen_result : gen_result(frame, Vis_cur, mat_list, result_metric)
-  main -> DRAW : draw_traj(im, AIS_vis, AIS_cur, Vis_tra, Vis_cur, mat_list, timestamp)
-  DRAW -> main : annotated image
-end
-
-main -> main : write frame to output video, show window
-main -> main : cleanup (release)
-@enduml
-```
-</details>
-
 ---
 
 ## Flowchart
@@ -216,32 +166,3 @@ main -> main : cleanup (release)
 ![Flowchart](flowchart.png)
 
 *Genel işleyişi kutucuklar ve karar yapıları ile gösteren akış diyagramı*
-
-<details>
-<summary>Mermaid Kaynak Kodu</summary>
-
-```mermaid
-flowchart TD
-  A[Baslat main.py argparse read_all] --> B[Video ac ve init moduller AISPRO VISPRO FUSPRO DRAW]
-  B --> C{Kare oku loop}
-  C -->|EOF| Z[Temizle bitir]
-  C --> D[update_time]
-  D --> E[AISPRO process]
-  E --> E1[read_ais data_coarse_process data_pred]
-  E1 --> E2[transform geo to pixel AIS_vis AIS_cur]
-  D --> F[VISPRO feedCap]
-  F --> F1[YOLO detect_image bboxes]
-  F --> F2[anti_occ OAR_extractor AIS prediction]
-  F1 & F2 --> G[DeepSort update tracked outputs]
-  G --> H[update_tra Vis_tra compute speed last5 list]
-  H --> I[FUSPRO fusion]
-  I --> I1[traj_group build AIS_list VIS_list]
-  I1 --> I2[cal_similarity angle DTW_fast cost matrix]
-  I2 --> I3[Hungarian linear_assignment matches]
-  I3 --> I4[data_filter save_data mat_list bin_cur]
-  I4 --> J[gen_result frame Vis_cur mat_list]
-  J --> K[DRAW draw_traj annotated frame]
-  K --> L[write to video imshow key checks]
-  L --> C
-```
-</details>
