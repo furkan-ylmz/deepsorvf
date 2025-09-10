@@ -3,6 +3,8 @@ from IPython import embed
 import numpy as np
 import cv2
 import time
+from utils.AIS_utils import visual_transform ##
+
 
 def add_alpha_channel(img):
 
@@ -19,7 +21,7 @@ def remove_alpha_channel(img):
 def draw_box(add_img, x1, y1, x2, y2, color, tf):
     y15 = y1+(y2-y1)//4
     x15 = x1+(y2-y1)//4#+(x2-x1)//4
-        
+    
     y45 = y2-(y2-y1)//4
     x45 = x2-(y2-y1)//4#-(x2-x1)//4
         
@@ -177,8 +179,50 @@ class DRAW(object):
         self.tf = max(self.tl + 1, 1)  # font thickness
         self.t = t
         
-    def draw_traj(self, pic, AIS_vis, AIS_cur, Vis_tra, Vis_cur, fusion_list, timestamp):
+    def draw_traj(self, pic, AIS_vis, AIS_cur, Vis_tra, Vis_cur, fusion_list, timestamp, camera_para):
         add_img = pic.copy()
+
+        # # SAF AIS noktalarını çiz (fusion bağımsız)
+        # for _, ais_row in AIS_vis.iterrows():
+        #     # Eğer AIS_vis içinde piksel koordinatları varsa (ör: 'x', 'y')
+        #     if 'x' in ais_row and 'y' in ais_row:
+        #         cx = int(ais_row['x'])
+        #         cy = int(ais_row['y'])
+        #     # Eğer piksel koordinatı yoksa, kutu bilgisi varsa merkezini al
+        #     elif 'x1' in ais_row and 'y1' in ais_row and 'x2' in ais_row and 'y2' in ais_row:
+        #         cx = int((ais_row['x1'] + ais_row['x2']) / 2)
+        #         cy = int((ais_row['y1'] + ais_row['y2']) / 2)
+        #     else:
+        #         continue  # Koordinat yoksa atla
+
+        #     # Sarı dolu daire ile işaretle
+        #     cv2.circle(add_img, (cx, cy), 6, (0, 255, 255), -1)
+        
+
+        # for _, ais_row in AIS_cur.iterrows():
+        #     # AIS_cur'da x,y yok, lon/lat var → visual_transform ile piksele çevir
+        #     cx, cy = visual_transform(
+        #         ais_row['lon'],
+        #         ais_row['lat'],
+        #         camera_para,   # main() içinde zaten var
+        #         (self.w, self.h)  # DRAW sınıfında mevcut görüntü boyutu
+        #     )
+
+        #     # Sarı nokta çiz
+        #     cv2.circle(add_img, (cx, cy), 6, (0, 255, 255), -1)
+
+        #     # MMSI etiketini ekle
+        #     cv2.putText(
+        #         add_img,
+        #         str(int(ais_row['mmsi'])),
+        #         (cx + 8, cy - 8),
+        #         cv2.FONT_HERSHEY_SIMPLEX,
+        #         0.5,
+        #         (0, 255, 255),
+        #         1,
+        #         cv2.LINE_AA
+        #     )
+
         if timestamp % 1000 < self.t:
             df_draw = pd.DataFrame(columns=['ais', 'mmsi', 'sog', 'cog',\
                 'lat', 'lon', 'box_x1', 'box_y1', 'box_x2', 'box_y2',\

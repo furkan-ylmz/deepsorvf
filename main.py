@@ -16,7 +16,7 @@ try:
     from performance_monitor import PerformanceMonitor
     MONITOR_AVAILABLE = True
 except ImportError as e:
-    print(f"⚠️  Performance monitor not available: {e}")
+    print(f"Performance monitor not available: {e}")
     print("   pip install psutil GPUtil")
     MONITOR_AVAILABLE = False
 ##
@@ -64,6 +64,23 @@ def main(arg):
         
         AIS_vis, AIS_cur = AIS.process(camera_para, timestamp, Time_name)
         Vis_tra, Vis_cur = VIS.feedCap(im, timestamp, AIS_vis, bin_inf)
+
+        # print("AIS_vis")
+        # print(AIS_vis)
+        # print("\n\n")
+
+        # print("AIS_cur")
+        # print(AIS_cur)
+        # print("\n\n")
+
+        # print("Vis_tra")
+        # print(Vis_tra)
+        # print("\n\n")
+
+        # print("Vis_cur")
+        # print(Vis_cur)
+        # print("\n\n")
+
         Fus_tra, bin_inf = FUS.fusion(AIS_vis, AIS_cur, Vis_tra, Vis_cur, timestamp)
 
         end = time.time() - start
@@ -75,7 +92,7 @@ def main(arg):
             print('Time: %s || Stamp: %d || Process: %.6f || Average: %.6f +- %.6f'%(Time_name, timestamp, time_i, np.mean(sum_t), np.std(sum_t)))
             time_i = 0
             
-        im = DRA.draw_traj(im, AIS_vis, AIS_cur, Vis_tra, Vis_cur, Fus_tra, timestamp)
+        im = DRA.draw_traj(im, AIS_vis, AIS_cur, Vis_tra, Vis_cur, Fus_tra, timestamp, camera_para)
         
         result = im
         result = imutils.resize(result, height=show_size)
@@ -86,7 +103,7 @@ def main(arg):
         videoWriter.write(result)
         cv2.imshow(name, result)
         key = cv2.waitKey(1) & 0xFF
-        if key == ord('q') or key == 27:  # 'q' or ESC key
+        if key == ord('q') or key == 27:
             break
         try:
             if cv2.getWindowProperty(name, cv2.WND_PROP_AUTOSIZE) < 1:
@@ -101,7 +118,7 @@ def main(arg):
     # Performance monitoring durdur
     ##
     if monitor:
-        print("\n⏹️  Performance monitoring durduruluyor...")
+        print("\nPerformance monitoring durduruluyor...")
         monitor.stop_monitoring()
     ##
 
