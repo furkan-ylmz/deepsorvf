@@ -1,10 +1,7 @@
 ﻿import pandas as pd
-from IPython import embed
 import numpy as np
 import cv2
-import time
-from utils.AIS_utils import visual_transform ##
-
+from utils.AIS_utils import AISPRO
 
 def add_alpha_channel(img):
 
@@ -21,31 +18,27 @@ def remove_alpha_channel(img):
 def draw_box(add_img, x1, y1, x2, y2, color, tf):
     y15 = y1+(y2-y1)//4
     x15 = x1+(y2-y1)//4#+(x2-x1)//4
-    
     y45 = y2-(y2-y1)//4
     x45 = x2-(y2-y1)//4#-(x2-x1)//4
         
     cv2.line(add_img, (x1, y1), (x1, y15), color, tf)
     cv2.line(add_img, (x1, y1), (x15, y1), color, tf)
-        
     cv2.line(add_img, (x2, y1), (x2, y15), color, tf)
     cv2.line(add_img, (x45, y1), (x2, y1), color, tf)
-        
     cv2.line(add_img, (x1, y2), (x15, y2), color, tf)
     cv2.line(add_img, (x1, y45), (x1, y2), color, tf)
-        
     cv2.line(add_img, (x45, y2), (x2, y2), color, tf)
     cv2.line(add_img, (x2, y45), (x2, y2), color, tf)
-    
+
     return add_img
 
 def draw_line(add_img, x1, y1, x2, y2, y_deta, color, tf):
     cv2.circle(add_img,(x1, y1), tf, color, tf//3)
     cv2.circle(add_img,(x2, y2), tf, color, tf//3)
-        
     cv2.line(add_img, (x1, y1+tf), (x1, y1+y_deta), color, tf//2)
     cv2.line(add_img, (x1, y1+y_deta), (x2, y1+y_deta), color, tf//2)
     cv2.line(add_img, (x2, y1+y_deta), (x2, y2-tf), color, tf//2)
+
     return add_img
 
 def inf_loc(x, y, w, h, w0, h0):
@@ -84,10 +77,8 @@ def process_img(df_draw, x1, y1, x2, y2, fusion_current, w, h, w0, h0, Type):
         cog  = -1
         lat  = -1
         lon  = -1
-    new_row = pd.DataFrame([{'ais':ais,'mmsi':mmsi,'sog':sog,"cog":cog,'lat':lat,'lon':lon,\
-                               'box_x1':x1,'box_y1':y1,'box_x2':x2,'box_y2':y2,\
-                            'inf_x1':inf_x1,'inf_y1':inf_y1,'inf_x2':inf_x2,'inf_y2':inf_y2,\
-                                'color':color}])
+    new_row = pd.DataFrame([{'ais':ais,'mmsi':mmsi,'sog':sog,"cog":cog,'lat':lat,'lon':lon, 'box_x1':x1,'box_y1':y1,'box_x2':x2,'box_y2':y2,\
+                            'inf_x1':inf_x1,'inf_y1':inf_y1,'inf_x2':inf_x2,'inf_y2':inf_y2, 'color':color}])
     df_draw = pd.concat([df_draw, new_row], ignore_index=True)
 
     return df_draw
@@ -122,41 +113,29 @@ def draw(add_img, df_draw, tf):
         add_img = draw_box(add_img, box_x1, box_y1, box_x2, box_y2, color, tf)
         
         if inf['ais'] == 1:
-            cv2.rectangle(add_img, (inf_x1,inf_y1), (inf_x2,inf_y2),\
-                          color, thickness=tf//3, lineType=cv2.LINE_AA)
-            cv2.putText(add_img, 'MMSI:{}'.format(mmsi), (inf_x1+tf, inf_y1+tf*5),\
-                        cv2.FONT_HERSHEY_SIMPLEX, tf/8, color, tf//2)
-            cv2.putText(add_img, 'SOG:{}'.format(sog)  , (inf_x1+tf, inf_y1+tf*11),\
-                        cv2.FONT_HERSHEY_SIMPLEX, tf/8, color, tf//2)
-            cv2.putText(add_img, 'COG:{}'.format(cog)  , (inf_x1+tf, inf_y1+tf*17),\
-                        cv2.FONT_HERSHEY_SIMPLEX, tf/8, color, tf//2)
-            cv2.putText(add_img, 'LAT:{}'.format(lat)  , (inf_x1+tf, inf_y1+tf*23),\
-                        cv2.FONT_HERSHEY_SIMPLEX, tf/8, color, tf//2)
-            cv2.putText(add_img, 'LON:{}'.format(lon)  , (inf_x1+tf, inf_y1+tf*29),\
-                        cv2.FONT_HERSHEY_SIMPLEX, tf/8, color, tf//2)
+            cv2.rectangle(add_img, (inf_x1,inf_y1), (inf_x2,inf_y2), color, thickness=tf//3, lineType=cv2.LINE_AA)
+            cv2.putText(add_img, 'MMSI:{}'.format(mmsi), (inf_x1+tf, inf_y1+tf*5), cv2.FONT_HERSHEY_SIMPLEX, tf/8, color, tf//2)
+            cv2.putText(add_img, 'SOG:{}'.format(sog)  , (inf_x1+tf, inf_y1+tf*11), cv2.FONT_HERSHEY_SIMPLEX, tf/8, color, tf//2)
+            cv2.putText(add_img, 'COG:{}'.format(cog)  , (inf_x1+tf, inf_y1+tf*17), cv2.FONT_HERSHEY_SIMPLEX, tf/8, color, tf//2)
+            cv2.putText(add_img, 'LAT:{}'.format(lat)  , (inf_x1+tf, inf_y1+tf*23), cv2.FONT_HERSHEY_SIMPLEX, tf/8, color, tf//2)
+            cv2.putText(add_img, 'LON:{}'.format(lon)  , (inf_x1+tf, inf_y1+tf*29), cv2.FONT_HERSHEY_SIMPLEX, tf/8, color, tf//2)
             add_img = draw_line(add_img, (box_x1+box_x2)//2, box_y2, (inf_x1+inf_x2)//2, inf_y1, y*(i+1)//(length+1), color, tf)
             i = i + 1
-            
         else:
-            cv2.rectangle(add_img, (inf_x1,inf_y1), (inf_x2,inf_y2),\
-                          color, thickness=tf//3, lineType=cv2.LINE_AA)
+            cv2.rectangle(add_img, (inf_x1,inf_y1), (inf_x2,inf_y2), color, thickness=tf//3, lineType=cv2.LINE_AA)
             add_img = draw_line(add_img, (box_x1+box_x2)//2, box_y2, (inf_x1+inf_x2)//2, inf_y1, y*(i+1)//(length+1), color, tf)
-            cv2.putText(add_img, 'NO AIS', (inf_x1+tf, (inf_y1+inf_y2)//2+tf*3),\
-                        cv2.FONT_HERSHEY_SIMPLEX, tf/4, color, tf//2)
+            cv2.putText(add_img, 'NO AIS', (inf_x1+tf, (inf_y1+inf_y2)//2+tf*3), cv2.FONT_HERSHEY_SIMPLEX, tf/4, color, tf//2)
             i = i + 1
 
     return add_img
 
 def filter_inf(df_draw, w, h, w0, h0, wn, hn, df):
     df_draw = df_draw.sort_values(by=['inf_x1'],ascending=True)
-    df_new = pd.DataFrame(columns=['ais', 'mmsi', 'sog', 'cog',\
-                'lat', 'lon', 'box_x1', 'box_y1', 'box_x2', 'box_y2',\
-                                    'inf_x1', 'inf_y1', 'inf_x2', 'inf_y2', 'color'])
+    df_new = pd.DataFrame(columns=['ais', 'mmsi', 'sog', 'cog', 'lat', 'lon', 'box_x1', 'box_y1', 'box_x2', 'box_y2', 'inf_x1', 'inf_y1', 'inf_x2', 'inf_y2', 'color'])
     index = 0
     for ind, inf in df_draw.iterrows():
         if inf['ais'] == 1:
             inf['inf_x1'] = index + df
-
             inf['inf_x2'] = inf['inf_x1'] + w0
             index = index + df + w0
         else:
@@ -169,9 +148,7 @@ def filter_inf(df_draw, w, h, w0, h0, wn, hn, df):
 
 class DRAW(object):
     def __init__(self, shape, t):
-        self.df_draw = pd.DataFrame(columns=['ais', 'mmsi', 'sog', 'cog',\
-                'lat', 'lon', 'box_x1', 'box_y1', 'box_x2', 'box_y2',\
-                                    'inf_x1', 'inf_y1', 'inf_x2', 'inf_y2', 'color'])
+        self.df_draw = pd.DataFrame(columns=['ais', 'mmsi', 'sog', 'cog', 'lat', 'lon', 'box_x1', 'box_y1', 'box_x2', 'box_y2', 'inf_x1', 'inf_y1', 'inf_x2', 'inf_y2', 'color'])
         self.w , self.h = int(shape[0]), int(shape[1])
         self.h0, self.w0 = self.h//8, self.w//12
         self.hn, self.wn = self.h//15, self.w//15
@@ -198,35 +175,22 @@ class DRAW(object):
         #     # Sarı dolu daire ile işaretle
         #     cv2.circle(add_img, (cx, cy), 6, (0, 255, 255), -1)
         
+        for _, ais_row in AIS_cur.iterrows():
+            # AIS_cur'da x,y yok, lon/lat var → visual_transform ile piksele çevir
+            cx, cy = AISPRO.visual_transform(
+                ais_row['lon'],
+                ais_row['lat'],
+                camera_para,   # main() içinde zaten var
+                (self.w, self.h)  # DRAW sınıfında mevcut görüntü boyutu
+            )
 
-        # for _, ais_row in AIS_cur.iterrows():
-        #     # AIS_cur'da x,y yok, lon/lat var → visual_transform ile piksele çevir
-        #     cx, cy = visual_transform(
-        #         ais_row['lon'],
-        #         ais_row['lat'],
-        #         camera_para,   # main() içinde zaten var
-        #         (self.w, self.h)  # DRAW sınıfında mevcut görüntü boyutu
-        #     )
-
-        #     # Sarı nokta çiz
-        #     cv2.circle(add_img, (cx, cy), 6, (0, 255, 255), -1)
-
-        #     # MMSI etiketini ekle
-        #     cv2.putText(
-        #         add_img,
-        #         str(int(ais_row['mmsi'])),
-        #         (cx + 8, cy - 8),
-        #         cv2.FONT_HERSHEY_SIMPLEX,
-        #         0.5,
-        #         (0, 255, 255),
-        #         1,
-        #         cv2.LINE_AA
-        #     )
+            # Sarı nokta çiz
+            cv2.circle(add_img, (cx, cy), 6, (0, 255, 255), -1)
+            # MMSI etiketini ekle
+            cv2.putText(add_img, str(int(ais_row['mmsi'])), (cx + 8, cy - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1, cv2.LINE_AA)
 
         if timestamp % 1000 < self.t:
-            df_draw = pd.DataFrame(columns=['ais', 'mmsi', 'sog', 'cog',\
-                'lat', 'lon', 'box_x1', 'box_y1', 'box_x2', 'box_y2',\
-                                    'inf_x1', 'inf_y1', 'inf_x2', 'inf_y2', 'color'])
+            df_draw = pd.DataFrame(columns=['ais', 'mmsi', 'sog', 'cog', 'lat', 'lon', 'box_x1', 'box_y1', 'box_x2', 'box_y2', 'inf_x1', 'inf_y1', 'inf_x2', 'inf_y2', 'color'])
             mmsi_list = AIS_vis['mmsi'].unique()
             id_list = Vis_cur['ID'].unique()
             
@@ -244,17 +208,14 @@ class DRAW(object):
                                 id_current['ID'][last]].reset_index(drop=True)
                         
                         if len(fusion_current) != 0:
-                            df_draw = process_img(df_draw, x1, y1, x2, y2,\
-                                fusion_current, self.w, self.h, self.w0, self.h0, Type = True)
+                            df_draw = process_img(df_draw, x1, y1, x2, y2, fusion_current, self.w, self.h, self.w0, self.h0, Type = True)
                         else:
                             fusion_current = []
-                            df_draw = process_img(df_draw, x1, y1, x2, y2,\
-                                      fusion_current, self.w, self.h, self.wn, self.hn, Type = False)
-                    
+                            df_draw = process_img(df_draw, x1, y1, x2, y2, fusion_current, self.w, self.h, self.wn, self.hn, Type = False)
+
                     else:
                         fusion_current = []
-                        df_draw = process_img(df_draw, x1, y1, x2, y2,\
-                                      fusion_current, self.w, self.h, self.wn, self.hn, Type = False)      
+                        df_draw = process_img(df_draw, x1, y1, x2, y2, fusion_current, self.w, self.h, self.wn, self.hn, Type = False)      
             self.df_draw = filter_inf(df_draw, self.w, self.h, self.w0, self.h0, self.wn, self.hn, self.tf)
         
         add_img = draw(add_img, self.df_draw, self.tf)

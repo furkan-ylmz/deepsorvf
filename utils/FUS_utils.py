@@ -1,16 +1,11 @@
-﻿import time
-from fastdtw import fastdtw
+﻿from fastdtw import fastdtw
 import pandas as pd
 from scipy.spatial.distance import euclidean
-import os
 import math
 import numpy as np
-import matplotlib.pyplot as plt
 from scipy.optimize import linear_sum_assignment as linear_assignment
-from IPython import embed
 
 def __reduce_by_half(x):
-    
     return [(x[i] + x[1+i]) / 2 for i in range(0, len(x) - len(x) % 2, 2)]
 
 def angle(v1, v2):
@@ -53,10 +48,6 @@ def DTW_fast(traj0, traj1):
     return d*math.exp(theta)
 
 def traj_group(df_data, df_dataCur,  kind):
-    """
-    :return: trajData_list, trajLabel_list, trajInf_list
-    """
-    
     trajData_list = []  
     trajLabel_list = []  
     trajInf_list = []  
@@ -90,18 +81,11 @@ class FUSPRO(object):
         
         self.max_dis = max_dis
         self.im_shape = im_shape
-        
         self.bin_num = 1
-        
         self.fog_num = 2
-        
         self.t = t
-
         self.mat_cur  = pd.DataFrame(pd.DataFrame(columns=['ID/mmsi','timestamp', 'match']))
-        
-        self.mat_list = pd.DataFrame(columns=['ID', 'mmsi',\
-                                'lon', 'lat', 'speed', 'course', 'heading', 'type', 'timestamp'])
-        
+        self.mat_list = pd.DataFrame(columns=['ID', 'mmsi', 'lon', 'lat', 'speed', 'course', 'heading', 'type', 'timestamp'])
         self.bin_cur  = pd.DataFrame(columns=['ID', 'mmsi', 'timestamp', 'match'])
 
     def initialization(self, AIS_list, VIS_list):
@@ -110,18 +94,15 @@ class FUSPRO(object):
         bin_las   = mat_las[mat_las['match'] > self.bin_num]
         mat_cur   = pd.DataFrame(pd.DataFrame(columns=['ID/mmsi','timestamp', 'match']))
         bin_cur   = pd.DataFrame(columns=['ID', 'mmsi', 'timestamp', 'match'])
-        
-        mat_list  = pd.DataFrame(columns=['ID', 'mmsi',\
-                                'lon', 'lat', 'speed', 'course', 'heading', 'type', 'x1',\
-                                    'y1', 'w', 'h', 'timestamp'])
+        mat_list  = pd.DataFrame(columns=['ID', 'mmsi', 'lon', 'lat', 'speed', 'course', 'heading', 'type', 'x1', 'y1', 'w', 'h', 'timestamp'])
         
         return mat_cur, bin_cur, mat_las, bin_las, mat_list
     
     def cal_similarity(self, AIS_list, AIS_MMSIlist, VIS_list, VIS_IDlist, bin_las):
         
         matrix_S = np.zeros((len(VIS_list), len(AIS_list)))
-        
         binIDmmsi, bin_MMSI, bin_ID = [], [], []
+
         if len(bin_las)!=0:
             grouped = bin_las.groupby('ID/mmsi')
             for value, group in grouped:
@@ -244,13 +225,9 @@ class FUSPRO(object):
 
         matric = pd.DataFrame(matrix_S,columns=AIS_MMSIlist,index=VIS_IDlist)
 
-
         # for row, col in zip(row_ind, col_ind):
-            
-
-        
-        mat_list, mat_cur, bin_cur = self.save_data(mat_cur, bin_cur, mat_las, bin_las,\
-                                    mat_list, matches, AIS_MMSIlist, VIS_IDlist, AInf_list, VInf_list, timestamp)
+   
+        mat_list, mat_cur, bin_cur = self.save_data(mat_cur, bin_cur, mat_las, bin_las, mat_list, matches, AIS_MMSIlist, VIS_IDlist, AInf_list, VInf_list, timestamp)
 
         return mat_list, mat_cur, bin_cur
     
@@ -260,8 +237,7 @@ class FUSPRO(object):
             AIS_list, AIS_MMSIlist, AInf_list = traj_group(AIS_vis, AIS_cur, 'AIS')
             VIS_list, VIS_IDlist, VInf_list = traj_group(Vis_tra, Vis_cur, 'VIS')
 
-            self.mat_list, self.mat_cur, self.bin_cur = self.traj_match(AIS_list,\
-                                AIS_MMSIlist, VIS_list, VIS_IDlist, AInf_list, VInf_list, timestamp)
+            self.mat_list, self.mat_cur, self.bin_cur = self.traj_match(AIS_list, AIS_MMSIlist, VIS_list, VIS_IDlist, AInf_list, VInf_list, timestamp)
 
         return self.mat_list, self.bin_cur
 

@@ -17,8 +17,6 @@ matched_data, fusion_results = fusion.fusion(
     timestamp=current_timestamp   # Mevcut zaman damgası
 )
 """
-
-import time
 import pandas as pd
 import numpy as np
 import math
