@@ -1,14 +1,41 @@
-fastdtw
-geopy
-numpy
-opencv-python
-pandas
-imutils
-python-docx
-scipy
-matplotlib
-Pillow
-psutil
-GPUtil
-psutil
-pynvml
+# Core dependencies for DeepSORVF vessel tracking modules
+# Install with: pip install -r requirements.txt
+
+# Data processing
+pandas>=1.3.0
+numpy>=1.20.0
+
+# Computer vision
+opencv-python>=4.5.0
+Pillow>=8.0.0
+
+# Geographic processing (for AIS module)
+geopy>=2.2.0
+pyproj>=3.2.0
+
+# Scientific computing (for fusion module)
+scipy>=1.7.0
+fastdtw>=0.3.4
+
+# Deep learning (for VIS module - optional)
+torch>=1.9.0
+torchvision>=0.10.0
+
+# Detection models (optional)
+# yolox>=0.3.0  # Uncomment if using YOLOX detection
+
+# Additional utilities
+matplotlib>=3.3.0  # For visualization
+imutils>=0.5.4     # Image processing utilities
+
+# System monitoring (optional)
+psutil>=5.8.0      # System and process monitoring
+GPUtil>=1.4.0      # GPU monitoring
+pynvml>=11.0.0     # NVIDIA GPU monitoring
+
+# Document processing (legacy)
+python-docx>=0.8.11  # For document generation
+
+# Note: Some packages may require specific versions based on your system
+# For Windows with CUDA support, visit: https://pytorch.org/get-started/locally/
+# For CPU-only installation, use: pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
