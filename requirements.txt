@@ -39,3 +39,5 @@ python-docx>=0.8.11  # For document generation
 # Note: Some packages may require specific versions based on your system
 # For Windows with CUDA support, visit: https://pytorch.org/get-started/locally/
 # For CPU-only installation, use: pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
+pyais
