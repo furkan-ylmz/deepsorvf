@@ -37,6 +37,7 @@ import pandas as pd
 import numpy as np
 import warnings
 import cv2
+import socket
 warnings.filterwarnings('ignore')
 
 try:
@@ -110,12 +111,18 @@ class VesselTracker:
         else:
             self.fusion_processor = None
             print("Fusion processor not initialized")
+
+        from draw import DRAW
+        self.drawer = DRAW(
+            self.image_shape,
+            fusion_config.get('time_interval', 33) if fusion_config else 33
+        )
         
         # Initialize tracking state
         self.bin_inf = pd.DataFrame(columns=['ID', 'mmsi', 'timestamp', 'match'])
         self.last_results = {}
     
-    def process_frame(self, frame, timestamp, time_name=None):
+    def process_frame(self, frame, timestamp, sock, time_name=None):
         """
         Process a single frame through the complete pipeline
         
@@ -140,67 +147,78 @@ class VesselTracker:
         
         start_time = pd.Timestamp.now()
         
-        try:
-            # Step 1: Process AIS data
-            if self.ais_processor and self.camera_parameters:
-                # Yeni (realtime)
-                ais_vis, ais_cur = self.ais_processor.process(self.camera_parameters, timestamp)
+        #try:
+        # Step 1: Process AIS data
+        if self.ais_processor and self.camera_parameters:
+            # Yeni (realtime)
+            ais_vis, ais_cur = self.ais_processor.process(self.camera_parameters, timestamp, sock)
+            results['ais']['visible'] = ais_vis
+            results['ais']['current'] = ais_cur
+        else:
+            ais_vis = pd.DataFrame()
+            ais_cur = pd.DataFrame()
+        
+        # Step 2: Process VIS data with original interface
+        if self.vis_processor is not None and frame is not None:
+            vis_tra, vis_cur = self.vis_processor.feedCap(
+                frame, timestamp, ais_vis, self.bin_inf
+            )
+            results['vis']['trajectories'] = vis_tra
+            results['vis']['current'] = vis_cur
+        else:
+            vis_tra = pd.DataFrame()
+            vis_cur = pd.DataFrame()
+        
+        # Step 3: Fusion processing
+        if self.fusion_processor and ais_vis is not [] and vis_tra is not []:
+            fused_data, self.bin_inf = self.fusion_processor.fusion(
+                ais_vis, ais_cur, vis_tra, vis_cur, timestamp
+            )
+            results['fusion']['matched'] = fused_data
+            results['fusion']['bindings'] = self.bin_inf
+        else:
+            results['fusion']['matched'] = pd.DataFrame()
+            results['fusion']['bindings'] = self.bin_inf
 
-                results['ais']['visible'] = ais_vis
-                results['ais']['current'] = ais_cur
-            else:
-                ais_vis = pd.DataFrame()
-                ais_cur = pd.DataFrame()
-            
-            # Step 2: Process VIS data with original interface
-            if self.vis_processor is not None and frame is not None:
-                vis_tra, vis_cur = self.vis_processor.feedCap(
-                    frame, timestamp, ais_vis, self.bin_inf
-                )
-                results['vis']['trajectories'] = vis_tra
-                results['vis']['current'] = vis_cur
-            else:
-                vis_tra = pd.DataFrame()
-                vis_cur = pd.DataFrame()
-            
-            # Step 3: Fusion processing
-            if self.fusion_processor and not ais_vis.empty and not vis_tra.empty:
-                fused_data, self.bin_inf = self.fusion_processor.fusion(
-                    ais_vis, ais_cur, vis_tra, vis_cur, timestamp
-                )
-                results['fusion']['matched'] = fused_data
-                results['fusion']['bindings'] = self.bin_inf
-            else:
-                results['fusion']['matched'] = pd.DataFrame()
-                results['fusion']['bindings'] = self.bin_inf
-            
-            for _, vessel in results['ais']['current'].iterrows():
-                mmsi = vessel['mmsi']
-                sog = vessel['speed']
-                cog = vessel['course']
-                lat = vessel['lat']
-                lon = vessel['lon']
+        if hasattr(self, "drawer"):
+            frame = self.drawer.draw_traj(
+                frame.copy(),
+                ais_vis,
+                ais_cur,
+                vis_tra,
+                vis_cur,
+                results['fusion']['matched'],
+                timestamp,
+                self.camera_parameters
+        )
+        
+        for _, vessel in results['ais']['current'].iterrows():
+            mmsi = vessel['mmsi']
+            sog = vessel['speed']
+            cog = vessel['course']
+            lat = vessel['lat']
+            lon = vessel['lon']
 
-                # Piksel koordinatına çevir (AISPRO'nun visual_transform'u ile)
-                try:
-                    x, y = AISPRO.visual_transform(lon, lat, self.camera_parameters, self.image_shape)
-                    cv2.putText(frame, f"MMSI: {mmsi}", (x, y - 40), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,255), 2)
-                    cv2.putText(frame, f"SOG: {sog}  COG: {cog}", (x, y - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,255), 2)
-                    cv2.putText(frame, f"LAT: {lat:.5f}  LON: {lon:.5f}", (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,255), 2)
-                except Exception as e:
-                    pass
+            # Piksel koordinatına çevir (AISPRO'nun visual_transform'u ile)
+            try:
+                x, y = AISPRO.visual_transform(lon, lat, self.camera_parameters, self.image_shape)
+                cv2.putText(frame, f"MMSI: {mmsi}", (x, y - 40), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,255), 2)
+                cv2.putText(frame, f"SOG: {sog}  COG: {cog}", (x, y - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,255), 2)
+                cv2.putText(frame, f"LAT: {lat:.5f}  LON: {lon:.5f}", (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,255), 2)
+            except Exception as e:
+                pass
 
             # Calculate processing time
-            end_time = pd.Timestamp.now()
-            processing_time = (end_time - start_time).total_seconds() * 1000
-            results['metadata']['processing_time'] = processing_time
+        end_time = pd.Timestamp.now()
+        processing_time = (end_time - start_time).total_seconds() * 1000
+        results['metadata']['processing_time'] = processing_time
+        
+        # Store results for access
+        self.last_results = results
             
-            # Store results for access
-            self.last_results = results
-            
-        except Exception as e:
-            print(f"Error in frame processing: {e}")
-            results['metadata']['error'] = str(e)
+        # except Exception as e:
+        #     print(f"Error in frame processing: {e}")
+        #     results['metadata']['error'] = str(e)
         
         return results, frame
     
@@ -344,66 +362,69 @@ if __name__ == "__main__":
         },
         'camera_config': {
             'image_shape': [1920, 1080],
-            'parameters': [114.327, 30.600, 45.0]  # lon, lat, heading
+            'parameters': [114.32722222222222, 30.60027777777778, 352, -4, 20, 55, 30.94, 2391.26, 2446.89, 1305.04, 855.214]  # lon, lat, heading
         }
     }
     
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.connect((config['ais_config']['host'], config['ais_config']['port']))
+
     # Initialize tracker
     tracker = VesselTracker(**config)
     
     # Test with dummy data
-    try:
-        # Create dummy frame
-        import numpy as np
-        cap = cv2.VideoCapture("2022_06_04_12_05_12_12_07_02_b.mp4")  # USB kamera
-        # cap = cv2.VideoCapture("video.mp4")  # Video dosyası
-        # cap = cv2.VideoCapture("rtsp://kullanici:sifre@kamera_ip:554/stream")  # IP kamera
+   #try:
+    # Create dummy frame
+    import numpy as np
+    cap = cv2.VideoCapture("2022_06_04_12_05_12_12_07_02_b.mp4")  # USB kamera
+    # cap = cv2.VideoCapture("video.mp4")  # Video dosyası
+    # cap = cv2.VideoCapture("rtsp://kullanici:sifre@kamera_ip:554/stream")  # IP kamera
 
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret:
-                break
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
 
-            # Zaman damgası (ms cinsinden)
-            timestamp = int(cap.get(cv2.CAP_PROP_POS_MSEC))
-            time_name = None  # Gerekirse video adı veya zaman etiketi
+        # Zaman damgası (ms cinsinden)
+        timestamp = int(cap.get(cv2.CAP_PROP_POS_MSEC))
+        time_name = None  # Gerekirse video adı veya zaman etiketi
 
-            # Tracker ile işle
-            results, overlay_frame = tracker.process_frame(frame, timestamp, time_name)
+        # Tracker ile işle
+        results, overlay_frame = tracker.process_frame(frame, timestamp, sock, time_name)
 
-            # Overlay göster
-            cv2.namedWindow("Overlay", cv2.WINDOW_NORMAL)
-            cv2.resizeWindow("Overlay", 1280, 720)
-            cv2.imshow("Overlay", overlay_frame)
+        # Overlay göster
+        cv2.namedWindow("Overlay", cv2.WINDOW_NORMAL)
+        cv2.resizeWindow("Overlay", 1280, 720)
+        cv2.imshow("Overlay", overlay_frame)
 
-            # 'q' ile çık
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
+        # 'q' ile çık
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
 
-        cap.release()
-        cv2.destroyAllWindows()
+    cap.release()
+    cv2.destroyAllWindows()
 
-        # Print results
-        print("\n📊 Processing Results:")
-        print(f"  AIS vessels: {len(results['ais']['current'])}")
-        print(f"  VIS tracks: {len(results['vis']['current'])}")
-        print(f"  Fused data: {len(results['fusion']['matched'])}")
-        print(f"  Processing time: {results['metadata']['processing_time']:.2f}ms")
+    # Print results
+    print("\n📊 Processing Results:")
+    print(f"  AIS vessels: {len(results['ais']['current'])}")
+    print(f"  VIS tracks: {len(results['vis']['current'])}")
+    print(f"  Fused data: {len(results['fusion']['matched'])}")
+    print(f"  Processing time: {results['metadata']['processing_time']:.2f}ms")
+    
+    # Print status
+    status = tracker.get_vessel_status()
+    print(f"\n🎯 Vessel Status:")
+    print(f"  Total vessels: {status['total_count']}")
+    print(f"  AIS vessels: {status['ais_vessels']}")
+    print(f"  VIS tracks: {status['vis_tracks']}")
+    print(f"  Fused vessels: {len(status['fused_vessels'])}")
+    
+    # Print performance
+    metrics = tracker.get_performance_metrics()
+    print(f"\n⚡ Performance:")
+    print(f"  FPS capability: {metrics['fps_capability']:.1f}")
+    print(f"  Processing time: {metrics['processing_time_ms']:.2f}ms")
         
-        # Print status
-        status = tracker.get_vessel_status()
-        print(f"\n🎯 Vessel Status:")
-        print(f"  Total vessels: {status['total_count']}")
-        print(f"  AIS vessels: {status['ais_vessels']}")
-        print(f"  VIS tracks: {status['vis_tracks']}")
-        print(f"  Fused vessels: {len(status['fused_vessels'])}")
-        
-        # Print performance
-        metrics = tracker.get_performance_metrics()
-        print(f"\n⚡ Performance:")
-        print(f"  FPS capability: {metrics['fps_capability']:.1f}")
-        print(f"  Processing time: {metrics['processing_time_ms']:.2f}ms")
-        
-    except Exception as e:
-        print(f"Error in test: {e}")
-        print("Note: Full functionality requires all dependencies")
+    # except Exception as e:
+    #     print(f"Error in test: {e}")
+    #     print("Note: Full functionality requires all dependencies")

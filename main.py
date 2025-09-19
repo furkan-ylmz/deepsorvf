@@ -64,23 +64,6 @@ def main(arg):
         
         AIS_vis, AIS_cur = AIS.process(camera_para, timestamp, Time_name)
         Vis_tra, Vis_cur = VIS.feedCap(im, timestamp, AIS_vis, bin_inf)
-
-        # print("AIS_vis")
-        # print(AIS_vis)
-        # print("\n\n")
-
-        # print("AIS_cur")
-        # print(AIS_cur)
-        # print("\n\n")
-
-        # print("Vis_tra")
-        # print(Vis_tra)
-        # print("\n\n")
-
-        # print("Vis_cur")
-        # print(Vis_cur)
-        # print("\n\n")
-
         Fus_tra, bin_inf = FUS.fusion(AIS_vis, AIS_cur, Vis_tra, Vis_cur, timestamp)
 
         end = time.time() - start

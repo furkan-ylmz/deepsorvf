@@ -25,25 +25,22 @@ class AISPRO(object):
         AIS_cur = pd.DataFrame(columns=['mmsi','lon','lat','speed','course','heading','type','timestamp'])
         return AIS_cur, AIS_las, AIS_vis
     
-    def read_ais(self):
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.connect((self.ais_host, self.ais_port))
-        sock_file = sock.makefile('r')
-
+    def read_ais(self, sock):
         while True:
-            line = sock_file.readline()
+            line = sock.recv(48)
             if not line:
+                print("connection closed")
                 break
-            line = line.strip()
-            if line.startswith("!AIVDM") or line.startswith("!AIVDO"):
-                ais_row = self.parse_nmea(line)
-                if ais_row is not None:
-                    yield ais_row
+            line = line.decode().strip()
+            ais_row = self.parse_nmea(line)
 
+            if ais_row is not None:
+                yield ais_row
 
     def parse_nmea(self, nmea_sentence):
         try:
             msg = decode(nmea_sentence)
+            print("msg", msg)
             return {
                 'mmsi': msg.mmsi,
                 'lon': msg.lon,
@@ -58,7 +55,6 @@ class AISPRO(object):
             print(f"NMEA parse hatası: {e}")
             return None
 
-        
     def data_tran(self, AIS_cur, AIS_vis, camera_para, timestamp):
 
         AIS_vis, AIS_vis_cur = self.transform(AIS_cur, AIS_vis, camera_para, self.im_shape)
@@ -70,30 +66,34 @@ class AISPRO(object):
         AIS_vis = AIS_vis.drop(AIS_vis[AIS_vis['timestamp'] < (timestamp//1000 - self.time_lim * 60)].index)
         return AIS_vis
     
-    def ais_pro(self, AIS_cur, AIS_las, AIS_vis, camera_para, timestamp):
+    def ais_pro(self, AIS_cur, AIS_las, AIS_vis, camera_para, timestamp, sock):
         rows = []
-        for ais_row in self.read_ais():  # read_ais sonsuz döngü ile sürekli veri üretir
+        a = self.read_ais(sock)
+        for ais_row in a:
             rows.append(ais_row)
-
-            # Her yeni satır geldiğinde işleme al
-            AIS_read = pd.DataFrame(rows)
+            print(ais_row)
+            AIS_read = pd.DataFrame(rows, columns=['mmsi','lon','lat','speed','course','heading','type','timestamp'])
             AIS_read = self.data_coarse_process(AIS_read, AIS_las, camera_para, self.max_dis)
             AIS_cur = self.data_pred(AIS_cur, AIS_read, AIS_las, timestamp)
             AIS_vis = self.data_tran(AIS_cur, AIS_vis, camera_para, timestamp)
 
-            # İstersen burada rows'u temizleyebilirsin ki hafıza şişmesin
             rows.clear()
 
-            # AIS_vis ve AIS_cur'u her adımda güncel tut
             self.AIS_vis, self.AIS_cur = AIS_vis, AIS_cur
+            return self.AIS_vis, self.AIS_cur
 
-    
-    def process(self, camera_para, timestamp):
-        #if timestamp % 1000 < self.t:
+        # Veri gelmezse boş DataFrame döndür
+        return pd.DataFrame(), pd.DataFrame()
+
+    def process(self, camera_para, timestamp, sock):
         AIS_cur, AIS_las, AIS_vis = self.initialization()
-        self.AIS_vis, self.AIS_cur = self.ais_pro(AIS_cur, AIS_las, AIS_vis, camera_para, timestamp)
+        result = self.ais_pro(AIS_cur, AIS_las, AIS_vis, camera_para, timestamp, sock)
+        if not result:
+            # Boş DataFrame döndür
+            return pd.DataFrame(), pd.DataFrame()
+    
+        self.AIS_vis, self.AIS_cur = result
         return self.AIS_vis, self.AIS_cur
-
 
     @staticmethod
     def count_distance(point1, point2, Type='m'):
@@ -163,6 +163,7 @@ class AISPRO(object):
 
     def data_filter(self, ais, camera_para):
 
+        print(camera_para)
         lon_cam = camera_para[0]
         lat_cam = camera_para[1]
         shoot_hdir = camera_para[2]
@@ -256,11 +257,13 @@ class AISPRO(object):
 
             if ais['mmsi'] in AIS_last['mmsi'].values:
                 temp = AIS_last[AIS_last.mmsi == ais['mmsi']]
-                if abs(ais['lon'] - temp['lon'].values[-1]) >= 1 \
-                    or abs(ais['lat'] - temp['lat'].values[-1]) >= 1 \
+                if not temp.empty:
+                    if abs(ais['lon'] - temp['lon'].values[-1]) >= 1 \
+                        or abs(ais['lat'] - temp['lat'].values[-1]) >= 1 \
                         or abs(ais['speed'] - temp['speed'].values[-1]) >= 7:
-                    AIS_current = AIS_current.drop(index=index)
-                    continue
+                        AIS_current = AIS_current.drop(index=index)
+                        continue
+
     
             ship_loc = (ais['lat'], ais['lon'])
             dis = self.count_distance(camera_loc, ship_loc, Type='m')
@@ -288,7 +291,7 @@ if __name__ == "__main__":
     
     try:
         # Original method call
-        AIS_vis, AIS_cur = aispro.process(camera_para, timestamp)
+        AIS_vis, AIS_cur = aispro.process(camera_para, timestamp, sock)
         print(f"✅ AIS processed: {len(AIS_vis)} visible, {len(AIS_cur)} current")
     except Exception as e:
         print(f"❌ Error: {e}")
