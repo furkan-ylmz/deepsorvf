@@ -20,4 +20,4 @@ def stream_nmea(file_path):
                 time.sleep(0.5) 
 
 if __name__ == "__main__":
-    stream_nmea("ais_all_sorted2.nmea")
+    stream_nmea("converter/ais_all_sorted.nmea")
