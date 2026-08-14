@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DeepSORVF - Denizcilik Komuta Kontrol Paneli (Web C2)</title>
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800&family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body class="dark-theme">
+
+    <!-- Header / Navbar -->
+    <header class="navbar">
+        <div class="logo">
+            <i class="fa-solid fa-ship brand-icon"></i>
+            <span class="brand-title">DeepSORVF</span>
+            <span class="brand-subtitle">Vessel Fusion Command & Control</span>
+        </div>
+        
+        <!-- Controls Bar -->
+        <div class="control-bar">
+            <!-- Stream Mode Toggle -->
+            <div class="mode-toggle">
+                <button id="btn-mode-file" class="mode-btn active" onclick="setMode('file')">
+                    <i class="fa-solid fa-file-video"></i> File Replayer
+                </button>
+                <button id="btn-mode-live" class="mode-btn" onclick="setMode('live')">
+                    <i class="fa-solid fa-tower-cell"></i> Live Web Stream
+                </button>
+            </div>
+
+            <!-- YOLO Model Selector -->
+            <div class="model-selector">
+                <label for="yolo-model-select"><i class="fa-solid fa-microchip"></i> YOLO Model:</label>
+                <select id="yolo-model-select" onchange="changeModel(this.value)">
+                    <option value="yolov8x.pt" selected>YOLOv8x (X-Large / Max Accuracy)</option>
+                    <option value="yolov8l.pt">YOLOv8l (Large)</option>
+                    <option value="yolov8m.pt">YOLOv8m (Medium)</option>
+                    <option value="yolov8s.pt">YOLOv8s (Small / Fast)</option>
+                    <option value="yolov8n.pt">YOLOv8n (Nano / Ultra Fast)</option>
+                    <option value="yolo11x.pt">YOLO11x (Next-Gen)</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- System Badges -->
+        <div class="system-status">
+            <span class="badge badge-cuda"><i class="fa-solid fa-bolt"></i> CUDA Active</span>
+            <span class="badge badge-fps"><i class="fa-solid fa-gauge-high"></i> <span id="fps-val">30.0</span> FPS</span>
+            <span class="badge badge-live"><i class="fa-solid fa-circle-dot pulsing"></i> LIVE</span>
+        </div>
+    </header>
+
+    <!-- Unidentified Target / Dark Ship Flashing Alert Banner -->
+    <div id="dark-ship-alert" class="alert-banner hidden">
+        <i class="fa-solid fa-triangle-exclamation alert-icon"></i>
+        <span><strong>DİKKAT / WARNING:</strong> Eşleşmemiş Tanımsız Hedef (Dark Ship / Unidentified Target) Algılandı!</span>
+    </div>
+
+    <!-- Main Grid Content -->
+    <main class="grid-container">
+        
+        <!-- Left Panel: Live Video Feed Stream -->
+        <section class="card video-card">
+            <div class="card-header">
+                <h3><i class="fa-solid fa-video"></i> Görsel Tespit & Overlay Akışı (VISPRO)</h3>
+                <span class="card-badge" id="video-info">1920x1080 @ YOLOv8x</span>
+            </div>
+            <div class="video-wrapper">
+                <img id="video-stream" src="/video_feed" alt="Live Video Feed Stream">
+            </div>
+        </section>
+
+        <!-- Right Panel: Leaflet.js Interactive Maritime Map -->
+        <section class="card map-card">
+            <div class="card-header">
+                <h3><i class="fa-solid fa-map-location-dot"></i> İnteraktif Deniz Haritası (AIS + OpenSeaMap)</h3>
+                <span class="card-badge">OpenSeaMap Layer Active</span>
+            </div>
+            <div id="map"></div>
+        </section>
+
+    </main>
+
+    <!-- Bottom Panel: Fusion Data Table & Event Log -->
+    <section class="grid-bottom">
+        
+        <!-- Vessel Fusion Table -->
+        <div class="card table-card">
+            <div class="card-header">
+                <h3><i class="fa-solid fa-table-list"></i> Gemi Eşleşme & Füzyon Tablosu (FUSPRO)</h3>
+                <span class="count-pill"><span id="fusion-count">0</span> Eşleşen Gemi</span>
+            </div>
+            <div class="table-wrapper">
+                <table class="c2-table">
+                    <thead>
+                        <tr>
+                            <th>VIS Track ID</th>
+                            <th>AIS MMSI</th>
+                            <th>Hız (SOG)</th>
+                            <th>Rota (COG)</th>
+                            <th>Enlem (LAT)</th>
+                            <th>Boylam (LON)</th>
+                            <th>Durum</th>
+                        </tr>
+                    </thead>
+                    <tbody id="vessel-table-body">
+                        <tr>
+                            <td colspan="7" class="empty-msg">Eşleşme verisi bekleniyor...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Telemetry & Event Log -->
+        <div class="card telemetry-card">
+            <div class="card-header">
+                <h3><i class="fa-solid fa-terminal"></i> Sistem Metrikleri & Canlı Olay Logu</h3>
+            </div>
+            <div class="metrics-grid">
+                <div class="metric-box">
+                    <span class="metric-label">AIS Görünen</span>
+                    <span class="metric-val" id="metric-ais">0</span>
+                </div>
+                <div class="metric-box">
+                    <span class="metric-label">VIS Takip</span>
+                    <span class="metric-val" id="metric-vis">0</span>
+                </div>
+                <div class="metric-box">
+                    <span class="metric-label">Füzyon Başarılı</span>
+                    <span class="metric-val highlight-green" id="metric-fus">0</span>
+                </div>
+                <div class="metric-box">
+                    <span class="metric-label">Tanımsız Hedef</span>
+                    <span class="metric-val highlight-red" id="metric-dark">0</span>
+                </div>
+            </div>
+            <div class="event-log" id="event-log-container">
+                <div class="log-item info">[SYSTEM] DeepSORVF Web C2 Engine Başlatıldı.</div>
+            </div>
+        </div>
+
+    </section>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
