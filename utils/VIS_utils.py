@@ -1,29 +1,27 @@
-﻿import cv2
+import cv2
 import torch
 from PIL import Image
 import pandas as pd
-from detection_yolox.yolo import YOLO
-from deep_sort.utils.parser import get_config
-from deep_sort.deep_sort import DeepSort
 from warnings import simplefilter
-import cv2
-from PIL import Image
-import pandas as pd
-from IPython import embed
+from utils.yolo_detector import YOLODetector
+from utils.bytetrack_tracker import ByteTracker
 
 simplefilter(action='ignore', category=FutureWarning)
 
-yolo = YOLO()
-
-cfg = get_config()
-cfg.merge_from_file("deep_sort/configs/deep_sort.yaml")
-deepsort = DeepSort(cfg.DEEPSORT.REID_CKPT, max_dist=cfg.DEEPSORT.MAX_DIST, min_confidence=cfg.DEEPSORT.MIN_CONFIDENCE,
-                    nms_max_overlap=cfg.DEEPSORT.NMS_MAX_OVERLAP, max_iou_distance=cfg.DEEPSORT.MAX_IOU_DISTANCE,
-                    max_age=cfg.DEEPSORT.MAX_AGE, n_init=cfg.DEEPSORT.N_INIT, nn_budget=cfg.DEEPSORT.NN_BUDGET, use_cuda=True)
-
 class VISPRO(object):
-    def __init__(self, anti, val, t):
+    def __init__(self, anti, val, t, model_name="yolov8x.pt", tracker_type="bytetrack"):
         self.anti = anti
+        self.val = val
+        self.t = t
+        self.model_name = model_name
+        self.tracker_type = tracker_type
+        
+        # Initialize Ultralytics YOLO Detector with CUDA acceleration
+        self.detector = YOLODetector(model_name=model_name)
+        
+        # Initialize ByteTrack Tracker
+        self.tracker = ByteTracker(high_thresh=0.3, low_thresh=0.1)
+        
         self.last5_vis_tra_list = []
         self.Vis_tra_cur_3      = pd.DataFrame(columns=['ID','x1','y1','x2','y2','x','y','timestamp'])
         self.Vis_tra_cur        = pd.DataFrame(columns=['ID','x1','y1','x2','y2','x','y','timestamp'])
@@ -32,46 +30,31 @@ class VISPRO(object):
         self.OAR_list = []
         self.OAR_ids_list = []
         self.OAR_mmsi_list = []
-        self.val = val
-        self.t = t
         self.Anti_occlusion_traj = pd.DataFrame(columns=['ID','x1','y1','x2','y2','x','y','speed','timestamp'])
 
+    def set_model(self, model_name):
+        """Dynamically change YOLO model size."""
+        self.detector.change_model(model_name)
+        self.model_name = model_name
+
     def detection(self, image):
-        im0 = cv2.cvtColor(image,cv2.COLOR_BGR2RGB)
-        im0 = Image.fromarray(im0)
-        bboxes = yolo.detect_image(im0)
-        return bboxes
+        """Run YOLOv8/v11 detection on input image (OpenCV BGR format)."""
+        return self.detector.detect(image)
 
     def track(self, image, bboxes, bboxes_anti_occ, id_list, timestamp):        
-        bbox_xywh, confs = [], []
-        bbox_xywh_anti_occ, confs_anti_occ = [], []
-        if len(bboxes) or len(bboxes_anti_occ):
+        outputs = self.tracker.update(bboxes, bboxes_anti_occ, id_list, timestamp)
+        for value in list(outputs):
+            x1, y1, x2, y2, _, track_id = value
+            if track_id in id_list and len(bboxes_anti_occ) > 0:
+                idx = id_list.index(track_id)
+                if idx < len(bboxes_anti_occ):
+                    x1, y1, x2, y2, _, _ = bboxes_anti_occ[idx] 
             
-            for x1, y1, x2, y2, _, conf in bboxes:
-                obj = [int((x1+x2)/2), int((y1+y2)/2),x2-x1, y2-y1]
-                bbox_xywh.append(obj)
-                confs.append(conf)
-            
-            for x1, y1, x2, y2, _, conf in bboxes_anti_occ:
-                obj = [int((x1+x2)/2), int((y1+y2)/2),x2-x1, y2-y1]
-                bbox_xywh_anti_occ.append(obj)
-                confs_anti_occ.append(conf)
-
-            xywhs = torch.Tensor(bbox_xywh)
-            confss = torch.Tensor(confs)
-            xywhs_anti_occ = torch.Tensor(bbox_xywh_anti_occ)
-            confss_anti_occ = torch.Tensor(confs_anti_occ)
-            
-            outputs = deepsort.update(xywhs, confss, image, xywhs_anti_occ, confss_anti_occ, id_list, timestamp)
-            for value in list(outputs):
-                x1, y1, x2, y2, _, track_id = value
-                if track_id in id_list:
-                    x1, y1, x2, y2, _, _ = bboxes_anti_occ[id_list.index(track_id)] 
-                
-                new_row = pd.DataFrame([{'ID':track_id,\
-                    'x1':int(x1),'y1':int(y1),'x2':int(x2),'y2':int(y2),'x':int((x1 + x2) / 2),\
-                        'y':int((y1 + y2) / 2), 'timestamp':timestamp//1000}])
-                self.Vis_tra_cur_3 = pd.concat([self.Vis_tra_cur_3, new_row], ignore_index=True)
+            new_row = pd.DataFrame([{'ID': track_id,
+                'x1': int(x1), 'y1': int(y1), 'x2': int(x2), 'y2': int(y2),
+                'x': int((x1 + x2) / 2), 'y': int((y1 + y2) / 2),
+                'timestamp': timestamp // 1000}])
+            self.Vis_tra_cur_3 = pd.concat([self.Vis_tra_cur_3, new_row], ignore_index=True)
 
     def update_tra(self, Vis_tra, timestamp):
         self.Vis_tra_cur = pd.DataFrame(columns=['ID','x1','y1','x2','y2','x','y','timestamp'])
@@ -186,32 +169,26 @@ class VISPRO(object):
             for i in range(len(pop_index_list)):
                 self.OAR_mmsi_list.pop(pop_index_list[i] - i)
                 self.OAR_ids_list.pop(pop_index_list[i] - i)
-                self.OAR_list.pop(pop_index_list[i] - i)
-            if not len(self.OAR_ids_list) == len(bboxes_anti_occ):
-                embed()
+            # if not len(self.OAR_ids_list) == len(bboxes_anti_occ): pass
         return bboxes_anti_occ
 
     def feedCap(self, image, timestamp, AIS_vis, bind_inf):
-        
-        if timestamp % 1000 < self.t:
-            
-            bboxes = self.detection(image)
-            bboxes_anti_occ = self.anti_occ(self.last5_vis_tra_list, bboxes, AIS_vis, bind_inf, timestamp // 1000)
+        bboxes = self.detection(image)
+        bboxes_anti_occ = self.anti_occ(self.last5_vis_tra_list, bboxes, AIS_vis, bind_inf, timestamp // 1000)
 
-            self.track(image, bboxes, bboxes_anti_occ=bboxes_anti_occ, id_list=self.OAR_ids_list, timestamp=timestamp // 1000)
+        self.track(image, bboxes, bboxes_anti_occ=bboxes_anti_occ, id_list=self.OAR_ids_list, timestamp=timestamp // 1000)
 
-            Vis_tra_cur = self.Vis_tra_cur
-            if timestamp % 1000 < self.t:
-                Vis_tra_cur = self.update_tra(self.Vis_tra, timestamp)
-                if self.anti:
-                    self.OAR_list, self.OAR_ids_list = self.OAR_extractor(self.last5_vis_tra_list, self.val)
+        Vis_tra_cur = self.update_tra(self.Vis_tra, timestamp)
+        if self.anti:
+            self.OAR_list, self.OAR_ids_list = self.OAR_extractor(self.last5_vis_tra_list, self.val)
 
-                self.VIS_tra_last = Vis_tra_cur
-                self.Anti_occlusion_traj = pd.DataFrame(columns=['ID', 'x1', 'y1', 'x2', 'y2', 'x', 'y', 'speed', 'timestamp'])
-                id_list = list(self.VIS_tra_last['ID'].unique())
-                for i in self.OAR_ids_list:
-                    row_to_add = self.VIS_tra_last.iloc[id_list.index(i)]
-                    self.Anti_occlusion_traj = pd.concat([self.Anti_occlusion_traj, pd.DataFrame([row_to_add])], ignore_index=True)
+        self.VIS_tra_last = Vis_tra_cur
+        self.Anti_occlusion_traj = pd.DataFrame(columns=['ID', 'x1', 'y1', 'x2', 'y2', 'x', 'y', 'speed', 'timestamp'])
+        id_list = list(self.VIS_tra_last['ID'].unique())
+        for i in self.OAR_ids_list:
+            if i in id_list:
+                row_to_add = self.VIS_tra_last.iloc[id_list.index(i)]
+                self.Anti_occlusion_traj = pd.concat([self.Anti_occlusion_traj, pd.DataFrame([row_to_add])], ignore_index=True)
         return self.Vis_tra, self.Vis_tra_cur
 
     def box_whether_in_area(self, bounding_box, Area):
@@ -226,8 +203,11 @@ class VISPRO(object):
         last_y = int(last_traj.loc['y'])
         cur_x = int(now_traj.loc['x'])
         cur_y = int(now_traj.loc['y'])
-        x_speed = (cur_x - last_x) / (int(now_traj.loc['timestamp']) - int(last_traj.loc['timestamp']))
-        y_speed = (cur_y - last_y) / (int(now_traj.loc['timestamp']) - int(last_traj.loc['timestamp']))
+        dt = float(now_traj.loc['timestamp']) - float(last_traj.loc['timestamp'])
+        if dt == 0:
+            return [0.0, 0.0]
+        x_speed = (cur_x - last_x) / dt
+        y_speed = (cur_y - last_y) / dt
 
         return [x_speed, y_speed]
 
