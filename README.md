@@ -1,70 +1,132 @@
-# 🚢 DeepSORVF - Modernized Vessel Tracking & AIS Fusion
+# DeepSORVF - Gemi Takip ve AIS Sensör Füzyon Sistemi
 
-**DeepSORVF** (*Deep-learning, Spatial-temporal Optimal Matching, Relative Vector Fusion*), gemi kameralarından alınan video akışları ile **AIS (Automatic Identification System)** telsiz verilerini gerçek zamanlı ve çevrimdışı ortamda birleştirerek gemi Görsel Takip ID'leri ile AIS MMSI numaralarını eşleştiren gelişmiş bir sensör füzyonu sistemidir.
+DeepSORVF (Deep learning-enabled Asynchronous Trajectory Matching-based Vessel Data Fusion), gemi kameralarından alınan görsel video akışları ile AIS (Automatic Identification System) telsiz verilerini zaman-mekansal optimal eşleştirme algoritmaları kullanarak birleştiren hibrit bir denizcilik takip ve kimliklendirme sistemidir.
 
----
-
-## 🌟 Modernize Edilmiş Özellikler (`dev` Branch)
-
-- **Ultralytics YOLOv8 / YOLO11 & PyTorch CUDA:** YOLOX yerine CUDA donanım ivmelendirmeli YOLOv8/v11 modelleri (`yolov8n` .. `yolov8x`).
-- **ByteTrack & BoT-SORT Çoklu Nesne Takibi:** Düşük güvenilirlikli tespitleri koruyan 2 aşamalı IoU ve Kalman filtresi ile kararlı ID takibi.
-- **Yerel Web Komuta Kontrol Arayüzü (Web C2 Dashboard):**
-  - **FastAPI & WebSocket:** Canlı video akışı (MJPEG) ve 10 Hz telemetry yayını.
-  - **Leaflet.js & OpenSeaMap:** Canlı uydu ve denizcilik haritası katmanları.
-  - **Karanlık Hedef / Tanımsız Gemi İkazı (Dark Ship Alert):** AIS ile eşleşmeyen tanımsız gemiler için kırmızı yanıp sönen ikaz paneli.
-- **Çift Modlu Akış Mimarisi (Dual Stream Architecture):**
-  - **File Mode:** Arşiv MP4 ve CSV verilerini replayer ile çalıştırma ve Ground Truth (`clip-01/gt`) ile MOTA/IDF1 benchmark testi.
-  - **Live Web Mode:** YouTube 7/24 Deniz Kameraları + `aisstream.io` ücretsiz WebSocket API'si ile sıfır maliyetli canlı akış.
+Bu proje, kamera görüntüsündeki gemi tespitlerine (YOLO) ve çoklu nesne takibine (ByteTrack) karşılık gelen AIS MMSI numaralarını, hız, rota ve enlem/boylam bilgilerini eşleştirerek görsel ve coğrafi veriyi tek bir komuta kontrol panelinde sunar.
 
 ---
 
-## 📂 Temiz & Modüler Dizin Yapısı
+## Sistem Mimarisi ve Temel Bileşenler
+
+Sistem mimarisi dört ana işlem modülünden oluşmaktadır:
+
+1. **VISPRO (Görsel Algılama ve Takip Modülü):**
+   - Ultralytics YOLOv8 ve YOLO11 mimarileri kullanılarak PyTorch CUDA ivmelendirmesi ile gemi tespiti yapılır.
+   - ByteTrack ve BoT-SORT algoritmaları ile nesnelerin kareler arası kimlik (ID) sürekliliği korunur.
+   - Gemi kapanmaları (occlusion) durumunda geçmiş hareket vektörlerinden faydalanılarak Anti-Occlusion tahmini üretilir.
+
+2. **AISPRO (AIS İşleme ve Coğrafi Projeksiyon Modülü):**
+   - AIS telsiz verilerindeki geçersiz koordinat ve mantıksız hız sıçramaları filtrelenir.
+   - PyProj WGS84 jeodezik ileri öngörü formülleri ile eksik zaman damgaları tahmin edilir.
+   - Kamera açısı, yüksekliği, odak uzaklığı ve bakış yönü kullanılarak 3D coğrafi koordinatlar (Lat, Lon) 2D piksel koordinatlarına (X, Y) dönüştürülür.
+
+3. **FUSPRO (Sensör Füzyon ve Atama Modülü):**
+   - Görsel iz zaman serileri ile AIS projeksiyon izleri arasındaki yön açısı farkı ve mesafe hesaplanır.
+   - FastDTW (Fast Dynamic Time Warping) algoritması kullanılarak zaman-hizalamalı benzerlik maliyet matrisi oluşturulur.
+   - Macar (Hungarian / Linear Sum Assignment) algoritması ile küresel minimum maliyetli Görsel ID ↔ AIS MMSI eşleştirmesi çözülür.
+
+4. **Web C2 (Yerel Komuta Kontrol Arayüzü):**
+   - FastAPI ve WebSocket mimarisi ile 30 FPS canlı video akışı ve 10 Hz telemetri yayını sağlanır.
+   - Leaflet.js altyapısında OpenStreetMap, Esri World Imagery ve OpenSeaMap denizcilik harita katmanları sunulur.
+   - AIS yayını yapmayan veya eşleşmeyen gemiler için Tanımsız Hedef (Dark Ship) ikaz sistemi çalışır.
+
+---
+
+## Teknolojik Altyapı
+
+- **Programlama Dili:** Python 3.10+
+- **Derin Öğrenme ve Takip:** Ultralytics (YOLOv8 / YOLO11), PyTorch (CUDA İvmelendirmeli), ByteTrack
+- **Görüntü İşleme:** OpenCV, NumPy, Pillow, Imutils
+- **Coğrafi ve Matematiksel Hesaplama:** PyProj, GeoPy, SciPy, FastDTW
+- **Web ve Arayüz:** FastAPI, Uvicorn, WebSockets, HTML5, CSS3, JavaScript, Leaflet.js, OpenSeaMap
+- **Sistem İzleme:** Psutil, GPUtil, Pynvml
+
+---
+
+## Proje Dizin Yapısı
 
 ```
 deepsorvf/
-├── main.py                  # CLI çalıştırma ve iş akışı giriş noktası
-├── performance_monitor.py   # CPU, RAM, GPU ve Watt güç tüketim izleyici
-├── requirements.txt         # Proje bağımlılıkları
+├── main.py                  # CLI arayüzü ve çevrimdışı iş akışı giriş noktası
+├── performance_monitor.py   # Donanım, GPU, bellek ve güç tüketim izleme modülü
+├── requirements.txt         # Proje bağımlılık listesi
+├── README.md                # Proje dokümantasyonu
+├── .gitignore               # Git dışlama kuralları
 ├── utils/                   # Çekirdek İşlem ve Füzyon Paketi
 │   ├── yolo_detector.py     # Ultralytics YOLOv8/v11 PyTorch CUDA dedektörü
 │   ├── bytetrack_tracker.py # ByteTrack / BoT-SORT çoklu nesne takipçisi
 │   ├── AIS_utils.py         # AIS jeodezik projeksiyon ve zaman senkronizasyonu
 │   ├── VIS_utils.py         # Görsel işleme ve Anti-Occlusion mantığı
 │   ├── FUS_utils.py         # Multi-Feature FastDTW ve Hungarian eşleştirici
-│   ├── draw.py              # Video overlay ve bilgi paneli çizen modül
+│   ├── draw.py              # Video üzerine çizim ve bilgi paneli oluşturan modül
 │   ├── stream_simulator.py  # Offline arşiv replayer akış simülatörü
 │   ├── live_stream.py        # YouTube Live + aisstream.io canlı akış bağlayıcı
 │   ├── file_read.py         # Dosya okuma ve konfigürasyon yardımcısı
-│   └── gen_result.py        # Sonuç CSV metrik yazıcı
+│   └── gen_result.py        # Sonuç metriklerini CSV olarak kaydeden modül
 ├── web_app/                 # Yerel Web Komuta Kontrol Paneli (Web C2)
-│   ├── server.py            # FastAPI & WebSocket backend sunucusu
-│   └── static/              # HTML5, CSS ve Leaflet.js frontend dosyaları
+│   ├── server.py            # FastAPI sunucusu ve WebSocket telemetri motoru
+│   └── static/              # HTML, CSS ve JavaScript frontend dosyaları
+│       ├── index.html       # Komuta kontrol ana ekranı
+│       ├── css/style.css    # Dark-mode arayüz tasarımı
+│       └── js/app.js        # Leaflet harita ve WebSocket istemci mantığı
 ├── tests/
-│   └── evaluate.py          # Ground Truth MOTA, IDF1 benchmark test betiği
-└── clip-01/                 # Örnek veri seti (Video, AIS CSV'leri, GT)
+│   └── evaluate.py          # Ground Truth MOTA, IDF1 benchmark doğrulama betiği
+└── clip-01/                 # Örnek test veri seti (Video, AIS CSV verileri, GT)
 ```
 
 ---
 
-## 🚀 Hızlı Başlangıç
+## Kurulum ve Kullanım
 
-### 1. Bağımlılıkları Yükleyin
+### 1. Bağımlılıkların Yüklenmesi
+
+Gerekli Python paketlerini yüklemek için terminalde aşağıdaki komutu çalıştırın:
+
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Yerel Web Komuta Kontrol Panelini (Web C2) Başlatın
+### 2. Web Komuta Kontrol Panelinin (Web C2) Başlatılması
+
+Arayüzü başlatmak için sunucu betiğini çalıştırın:
+
 ```bash
 python web_app/server.py
 ```
-Tarayıcınızda **`http://localhost:8000`** adresini açarak Komuta Kontrol Paneline ulaşabilirsiniz.
 
-### 3. CLI İle Çevrimdışı Çalıştırma
+Sunucu başladıktan sonra web tarayıcınızda aşağıdaki adrese gidin:
+
+```
+http://localhost:8000
+```
+
+Arayüz Özellikleri:
+- Mod Seçimi: File Replayer (Arşiv Videoları) veya Live Web Stream (Canlı Yayın).
+- Model Seçimi: YOLOv8x, YOLOv8l, YOLOv8m, YOLOv8s, YOLOv8n ve YOLO11x modelleri arasında dinamik geçiş.
+- Deniz Haritası: Sağ üst köşedeki katman butonundan OpenSeaMap katmanı aktif edilebilir.
+
+### 3. Komut Satırından (CLI) Çevrimdışı Çalıştırma
+
+Sistemi web arayüzü olmadan doğrudan terminal üzerinden çalıştırmak için:
+
 ```bash
 python main.py --data_path ./clip-01/ --monitor
 ```
 
-### 4. Ground Truth Metrik Testi
+### 4. Ground Truth Benchmark Değerlendirme Testi
+
+Sistemin doğruluk metriklerini (MOTA, IDF1, Precision, Recall) Ground Truth verileriyle kıyaslamak için:
+
 ```bash
 python tests/evaluate.py
 ```
+
+---
+
+## Veri Akış Modları
+
+1. **File Mode (Çevrimdışı / Arşiv Simülasyonu):**
+   Diskte yer alan MP4 videolarını ve zamana göre sıralanmış AIS CSV dosyalarını kare kare okuyarak gerçek zamanlı gibi işler. Başarım ölçümü ve testler için kullanılır.
+
+2. **Live Web Stream Mode (Canlı İnternet Akışı):**
+   `streamlink` kütüphanesi aracılığıyla YouTube üzerindeki 7/24 deniz canlı yayınlarından video akışı alır ve `aisstream.io` WebSocket servisine bağlanarak anlık coğrafi bölgedeki gerçek gemi telsiz verilerini çekip eşleştirir.
