@@ -1,4 +1,4 @@
-﻿import pandas as pd
+import pandas as pd
 from geopy.distance import geodesic
 import pyproj
 from math import radians, cos, sin, tan, atan2, degrees
@@ -55,11 +55,9 @@ class AISPRO(object):
         return AIS_vis, AIS_cur
     
     def process(self, camera_para, timestamp, Time_name):
-        
-        if timestamp % 1000 < self.t:
-            Time_name = Time_name[:-4]
-            AIS_cur, AIS_las, AIS_vis = self.initialization()
-            self.AIS_vis, self.AIS_cur = self.ais_pro(AIS_cur,AIS_las, AIS_vis, camera_para, timestamp, Time_name)
+        Time_name_clean = Time_name[:-4] if len(Time_name) > 4 else Time_name
+        AIS_cur, AIS_las, AIS_vis = self.initialization()
+        self.AIS_vis, self.AIS_cur = self.ais_pro(AIS_cur, AIS_las, AIS_vis, camera_para, timestamp, Time_name_clean)
         return self.AIS_vis, self.AIS_cur
     
     @staticmethod
@@ -184,10 +182,13 @@ class AISPRO(object):
             ais['lon'], ais['lat'], c = geo_d.fwd(ais['lon'], ais['lat'], ais['course'], distance)
         return ais
 
-    def data_pred(self, AIS_cur, AIS_read, AIS_las, timestamp):
+    def set_time_offset(self, offset_ms):
+        """Set dynamic AIS time offset in milliseconds."""
+        self.time_offset = offset_ms
 
-        # Time offset correction - AIS data is ~5 hours behind video
-        TIME_OFFSET = 5 * 3600 * 1000  # 5 hours in milliseconds
+    def data_pred(self, AIS_cur, AIS_read, AIS_las, timestamp):
+        # Time offset correction - AIS data timestamp adjustment
+        TIME_OFFSET = getattr(self, 'time_offset', 5 * 3600 * 1000)
 
         for index, ais in AIS_read.iterrows():
             # Apply time offset to AIS timestamp

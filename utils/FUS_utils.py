@@ -1,4 +1,4 @@
-﻿from fastdtw import fastdtw
+from fastdtw import fastdtw
 import pandas as pd
 from scipy.spatial.distance import euclidean
 import math
@@ -132,7 +132,9 @@ class FUSPRO(object):
                         matrix_S[i][j] = 1000000000
                 
                 elif cur_IDmmsi in binIDmmsi:
-                    matrix_S[i][j] = 0-int(bin_las[bin_las['ID/mmsi'] == cur_IDmmsi]['match'].values)*100
+                    matched_arr = bin_las[bin_las['ID/mmsi'] == cur_IDmmsi]['match'].values
+                    match_val = int(matched_arr[0]) if len(matched_arr) > 0 else 1
+                    matrix_S[i][j] = 0 - match_val * 100
                 
                 else:
                     matrix_S[i][j] = 1000000000
@@ -232,12 +234,9 @@ class FUSPRO(object):
         return mat_list, mat_cur, bin_cur
     
     def fusion(self,AIS_vis, AIS_cur, Vis_tra, Vis_cur, timestamp):
-        if timestamp % 1000 < self.t:
-            
-            AIS_list, AIS_MMSIlist, AInf_list = traj_group(AIS_vis, AIS_cur, 'AIS')
-            VIS_list, VIS_IDlist, VInf_list = traj_group(Vis_tra, Vis_cur, 'VIS')
+        AIS_list, AIS_MMSIlist, AInf_list = traj_group(AIS_vis, AIS_cur, 'AIS')
+        VIS_list, VIS_IDlist, VInf_list = traj_group(Vis_tra, Vis_cur, 'VIS')
 
-            self.mat_list, self.mat_cur, self.bin_cur = self.traj_match(AIS_list, AIS_MMSIlist, VIS_list, VIS_IDlist, AInf_list, VInf_list, timestamp)
-
+        self.mat_list, self.mat_cur, self.bin_cur = self.traj_match(AIS_list, AIS_MMSIlist, VIS_list, VIS_IDlist, AInf_list, VInf_list, timestamp)
         return self.mat_list, self.bin_cur
 

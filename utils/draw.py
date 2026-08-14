@@ -1,4 +1,4 @@
-﻿import pandas as pd
+import pandas as pd
 import numpy as np
 import cv2
 from utils.AIS_utils import AISPRO
@@ -189,34 +189,29 @@ class DRAW(object):
             # MMSI etiketini ekle
             cv2.putText(add_img, str(int(ais_row['mmsi'])), (cx + 8, cy - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1, cv2.LINE_AA)
 
-        if timestamp % 1000 < self.t:
-            df_draw = pd.DataFrame(columns=['ais', 'mmsi', 'sog', 'cog', 'lat', 'lon', 'box_x1', 'box_y1', 'box_x2', 'box_y2', 'inf_x1', 'inf_y1', 'inf_x2', 'inf_y2', 'color'])
-            mmsi_list = AIS_vis['mmsi'].unique()
-            id_list = Vis_cur['ID'].unique()
-            
-            for i in range(len(id_list)):
-                
-                id_current = Vis_tra[Vis_tra['ID'] == id_list[i]].reset_index(drop=True)
-                last = len(id_current)-1
-                if last != -1:
-                    x1 = int(max(id_current['x1'][last],0))
-                    y1 = int(max(id_current['y1'][last],0))
-                    x2 = int(min(id_current['x2'][last],self.w))
-                    y2 = int(min(id_current['y2'][last],self.h))
-                    if id_current['timestamp'][last] == timestamp//1000 and len(fusion_list) != 0:
-                        fusion_current = fusion_list[fusion_list['ID'] == \
-                                id_current['ID'][last]].reset_index(drop=True)
-                        
-                        if len(fusion_current) != 0:
-                            df_draw = process_img(df_draw, x1, y1, x2, y2, fusion_current, self.w, self.h, self.w0, self.h0, Type = True)
-                        else:
-                            fusion_current = []
-                            df_draw = process_img(df_draw, x1, y1, x2, y2, fusion_current, self.w, self.h, self.wn, self.hn, Type = False)
-
+        df_draw = pd.DataFrame(columns=['ais', 'mmsi', 'sog', 'cog', 'lat', 'lon', 'box_x1', 'box_y1', 'box_x2', 'box_y2', 'inf_x1', 'inf_y1', 'inf_x2', 'inf_y2', 'color'])
+        mmsi_list = AIS_vis['mmsi'].unique() if 'mmsi' in AIS_vis else []
+        id_list = Vis_cur['ID'].unique() if 'ID' in Vis_cur else []
+        
+        for i in range(len(id_list)):
+            id_current = Vis_tra[Vis_tra['ID'] == id_list[i]].reset_index(drop=True)
+            last = len(id_current)-1
+            if last != -1:
+                x1 = int(max(id_current['x1'][last],0))
+                y1 = int(max(id_current['y1'][last],0))
+                x2 = int(min(id_current['x2'][last],self.w))
+                y2 = int(min(id_current['y2'][last],self.h))
+                if len(fusion_list) != 0:
+                    fusion_current = fusion_list[fusion_list['ID'] == id_current['ID'][last]].reset_index(drop=True)
+                    if len(fusion_current) != 0:
+                        df_draw = process_img(df_draw, x1, y1, x2, y2, fusion_current, self.w, self.h, self.w0, self.h0, Type = True)
                     else:
                         fusion_current = []
-                        df_draw = process_img(df_draw, x1, y1, x2, y2, fusion_current, self.w, self.h, self.wn, self.hn, Type = False)      
-            self.df_draw = filter_inf(df_draw, self.w, self.h, self.w0, self.h0, self.wn, self.hn, self.tf)
+                        df_draw = process_img(df_draw, x1, y1, x2, y2, fusion_current, self.w, self.h, self.wn, self.hn, Type = False)
+                else:
+                    fusion_current = []
+                    df_draw = process_img(df_draw, x1, y1, x2, y2, fusion_current, self.w, self.h, self.wn, self.hn, Type = False)      
+        self.df_draw = filter_inf(df_draw, self.w, self.h, self.w0, self.h0, self.wn, self.hn, self.tf)
         
         add_img = draw(add_img, self.df_draw, self.tf)
         return add_img

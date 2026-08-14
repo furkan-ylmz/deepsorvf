@@ -41,24 +41,21 @@ import socket
 warnings.filterwarnings('ignore')
 
 try:
-    from ais import AISPRO
+    from utils.AIS_utils import AISPRO
     AIS_AVAILABLE = True
 except ImportError:
-    print("Warning: AISPRO module not available")
     AIS_AVAILABLE = False
 
 try:
-    from vis import VISPRO
+    from utils.VIS_utils import VISPRO
     VIS_AVAILABLE = True
 except ImportError:
-    print("Warning: VISPRO module not available")
     VIS_AVAILABLE = False
 
 try:
-    from fusion import Fusion
+    from utils.FUS_utils import FUSPRO
     FUSION_AVAILABLE = True
 except ImportError:
-    print("Warning: Fusion module not available")
     FUSION_AVAILABLE = False
 
 
