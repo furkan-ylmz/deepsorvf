@@ -1,0 +1,37 @@
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Deep Learning Model Weights
+*.pt
+*.pth
+*.onnx
+*.engine
+*.bin
+
+# Log & Performance CSV files
+*.log
+web_c2_performance.csv
+performance_log.csv
+deepsorvf_performance_*.csv
+
+# Generated output results
+result/video/*
+result/metric/*
+!result/video/.gitkeep
+!result/metric/.gitkeep
+
+# Environments & IDEs
+venv/
+env/
+.venv/
+.vscode/
+.idea/
+*.swp
+
+# Operating system files
+.DS_Store
+Thumbs.db

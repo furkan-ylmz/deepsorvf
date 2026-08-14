@@ -21,23 +21,22 @@ fastdtw>=0.3.4
 torch>=1.9.0
 torchvision>=0.10.0
 
-# Detection models (optional)
-# yolox>=0.3.0  # Uncomment if using YOLOX detection
+# Detection & Tracking Models
+ultralytics>=8.0.0
+
+# Web Command & Control Dashboard & Streaming
+fastapi>=0.95.0
+uvicorn>=0.20.0
+websockets>=11.0
+streamlink>=5.0.0
 
 # Additional utilities
-matplotlib>=3.3.0  # For visualization
-imutils>=0.5.4     # Image processing utilities
+matplotlib>=3.3.0
+imutils>=0.5.4
 
-# System monitoring (optional)
-psutil>=5.8.0      # System and process monitoring
-GPUtil>=1.4.0      # GPU monitoring
-pynvml>=11.0.0     # NVIDIA GPU monitoring
-
-# Document processing (legacy)
-python-docx>=0.8.11  # For document generation
-
-# Note: Some packages may require specific versions based on your system
-# For Windows with CUDA support, visit: https://pytorch.org/get-started/locally/
-# For CPU-only installation, use: pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+# System monitoring
+psutil>=5.8.0
+GPUtil>=1.4.0
+pynvml>=11.0.0
 
 pyais
