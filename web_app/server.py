@@ -22,6 +22,7 @@ from utils.FUS_utils import FUSPRO
 from utils.draw import DRAW
 from utils.file_read import read_all, ais_initial, update_time
 from utils.stream_simulator import StreamSimulator
+from utils.time_sync import AutoTimestampSynchronizer
 from performance_monitor import PerformanceMonitor
 
 app = FastAPI(title="DeepSORVF Web C2 Dashboard", version="2.0.0")
@@ -41,12 +42,16 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 # System State Global Container
 class SystemEngine:
-    def __init__(self):
-        self.mode = "file"  # "file" or "live"
+    """
+    Core Execution Engine managing Video Capture, YOLOv8 Detection,
+    ByteTrack Tracking, Multi-Feature DTW, EKF Fusion, and WebSocket broadcasting.
+    """
+    def __init__(self, data_path="./clip-01/", result_path="./result/"):
+        self.data_path = data_path
+        self.result_path = result_path
         self.model_name = "yolov8x.pt"
+        self.mode = "file"  # "file" or "live"
         self.is_running = True
-        self.data_path = "./clip-01/"
-        self.result_path = "./result/"
         
         # Read parameters
         self.video_path, self.ais_path, _, _, self.initial_time, self.camera_para = read_all(self.data_path, self.result_path)
@@ -62,6 +67,7 @@ class SystemEngine:
         self.VIS = VISPRO(anti=1, val=0, t=self.t, model_name=self.model_name)
         self.FUS = FUSPRO(self.max_dis, self.im_shape, self.t)
         self.DRA = DRAW(self.im_shape, self.t)
+        self.time_sync = AutoTimestampSynchronizer()
         
         self.simulator = StreamSimulator(self.data_path, self.initial_time)
         self.bin_inf = pd.DataFrame(columns=['ID', 'mmsi', 'timestamp', 'match'])
@@ -110,11 +116,33 @@ class SystemEngine:
             
             # 2. VIS Processing (YOLOv8/v11 + ByteTrack)
             Vis_tra, Vis_cur = self.VIS.feedCap(frame, timestamp, AIS_vis, self.bin_inf)
+
+            # 3. Auto-Sync Time Offset Calculation
+            for _, r in Vis_cur.iterrows():
+                if 'speed' in r:
+                    try:
+                        s_val = str(r['speed'])
+                        if ',' in s_val:
+                            vx, vy = [float(x) for x in s_val.strip("[]()").split(",")]
+                            self.time_sync.add_visual_sample(timestamp, math.sqrt(vx**2 + vy**2))
+                    except Exception:
+                        pass
+
+            for _, r in AIS_cur.iterrows():
+                if 'speed' in r:
+                    try:
+                        self.time_sync.add_ais_sample(timestamp, float(r['speed']))
+                    except Exception:
+                        pass
+
+            if self.time_sync.should_sync(timestamp):
+                opt_offset = self.time_sync.compute_offset()
+                self.AIS.set_time_offset(opt_offset)
             
-            # 3. Fusion Processing (FastDTW + Hungarian)
+            # 4. Fusion Processing (Multi-Feature FastDTW + Adaptive Hungarian + EKF)
             Fus_tra, self.bin_inf = self.FUS.fusion(AIS_vis, AIS_cur, Vis_tra, Vis_cur, timestamp)
             
-            # 4. Draw Overlay
+            # 5. Draw Overlay
             overlay = self.DRA.draw_traj(frame.copy(), AIS_vis, AIS_cur, Vis_tra, Vis_cur, Fus_tra, timestamp, self.camera_para)
             
             # FPS Calculation
@@ -152,6 +180,7 @@ class SystemEngine:
 
             # Detect Unidentified Targets (Dark Ships)
             unmatched_vis = [t for t in vis_tracks if not any(f['vis_id'] == t['id'] for f in fusion_matches)]
+            ekf_states = self.FUS.get_ekf_states()
 
             with self.lock:
                 self.current_frame = frame
@@ -170,6 +199,8 @@ class SystemEngine:
                     "vis_tracks": vis_tracks,
                     "fusion_matches": fusion_matches,
                     "unmatched_vis": unmatched_vis,
+                    "ekf_tracks": ekf_states,
+                    "time_offset_ms": self.time_sync.current_offset_ms,
                     "camera_para": self.camera_para[:2]  # [lon_cam, lat_cam]
                 }
                 

@@ -103,8 +103,8 @@ class PerformanceMonitor:
     
     def start_monitoring(self):
         """Monitoring başlat"""
-        print("🚀 Performans monitoring başlatıldı...")
-        print(f"📊 Log dosyası: {self.log_file}")
+        print("[INFO] Performans monitoring başlatıldı...")
+        print(f"[INFO] Log dosyası: {self.log_file}")
         
         self.start_time = time.time()
         self.monitoring = True
@@ -127,7 +127,7 @@ class PerformanceMonitor:
     
     def print_system_info(self):
         """Sistem bilgilerini yazdır"""
-        print("\n💻 Sistem Bilgileri:")
+        print("\n[SYSTEM] Sistem Bilgileri:")
         print(f"CPU: {psutil.cpu_count()} çekirdek")
         print(f"RAM: {psutil.virtual_memory().total // (1024**3)} GB")
         
