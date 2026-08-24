@@ -12,7 +12,7 @@
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/style.css?v=2.6">
 </head>
 <body class="dark-theme">
 
@@ -40,10 +40,10 @@
             <div class="model-selector">
                 <label for="yolo-model-select"><i class="fa-solid fa-microchip"></i> YOLO Model:</label>
                 <select id="yolo-model-select" onchange="changeModel(this.value)">
-                    <option value="yolov8x.pt" selected>YOLOv8x (X-Large / Max Accuracy)</option>
+                    <option value="yolov8x.pt">YOLOv8x (X-Large / Max Accuracy)</option>
                     <option value="yolov8l.pt">YOLOv8l (Large)</option>
                     <option value="yolov8m.pt">YOLOv8m (Medium)</option>
-                    <option value="yolov8s.pt">YOLOv8s (Small / Fast)</option>
+                    <option value="yolov8s.pt" selected>YOLOv8s (Small / Fast)</option>
                     <option value="yolov8n.pt">YOLOv8n (Nano / Ultra Fast)</option>
                     <option value="yolo11x.pt">YOLO11x (Next-Gen)</option>
                 </select>
@@ -54,7 +54,7 @@
         <div class="system-status">
             <span class="badge badge-cuda"><i class="fa-solid fa-bolt"></i> CUDA Active</span>
             <span class="badge badge-fps"><i class="fa-solid fa-gauge-high"></i> <span id="fps-val">30.0</span> FPS</span>
-            <span class="badge badge-live"><i class="fa-solid fa-circle-dot pulsing"></i> LIVE</span>
+            <span class="badge badge-live" id="stream-status-badge"><i class="fa-solid fa-circle-play"></i> FILE REPLAYER</span>
         </div>
     </header>
 
@@ -71,7 +71,7 @@
         <section class="card video-card">
             <div class="card-header">
                 <h3><i class="fa-solid fa-video"></i> Görsel Tespit & Overlay Akışı (VISPRO)</h3>
-                <span class="card-badge" id="video-info">1920x1080 @ YOLOv8x</span>
+                <span class="card-badge" id="video-info">1920x1080 @ YOLOv8s</span>
             </div>
             <div class="video-wrapper">
                 <img id="video-stream" src="/video_feed" alt="Live Video Feed Stream">
@@ -82,12 +82,86 @@
         <section class="card map-card">
             <div class="card-header">
                 <h3><i class="fa-solid fa-map-location-dot"></i> İnteraktif Deniz Haritası (AIS + OpenSeaMap)</h3>
-                <span class="card-badge">OpenSeaMap Layer Active</span>
+                <span class="card-badge" id="map-location-badge">Bölge: Wuhan Segment</span>
             </div>
             <div id="map"></div>
         </section>
 
     </main>
+
+    <!-- Dedicated Live Stream & Calibration Control Panel (Visible Only When Live Stream Mode Active) -->
+    <section id="live-control-panel" class="card live-panel hidden">
+        <div class="card-header">
+            <h3><i class="fa-solid fa-tower-broadcast"></i> Canlı Deniz Akışı & Kamera Kalibrasyon Paneli</h3>
+            <span class="card-badge" id="live-connection-status"><i class="fa-solid fa-circle-dot pulsing"></i> Canlı Veri Hazır</span>
+        </div>
+        <div class="live-panel-body">
+            <!-- Top Controls Row -->
+            <div class="live-input-row">
+                <div class="input-group flex-1">
+                    <label><i class="fa-solid fa-globe"></i> Kıyı Kamera / Bölge Profili:</label>
+                    <select id="live-profile-select" onchange="onProfileChange(this.value)">
+                        <option value="istanbul_kizkulesi" selected>İstanbul Boğazı (Kız Kulesi / Tower to Tower Live)</option>
+                        <option value="istanbul_bosphorus">İstanbul Boğazı (Sarayburnu / Boğaz Girişi)</option>
+                        <option value="port_rotterdam">Rotterdam Limanı (Nieuwe Waterweg / Hollanda)</option>
+                        <option value="port_miami">PortMiami (Government Cut / ABD)</option>
+                        <option value="custom">Özel YouTube / RTSP Canlı Akış Linki</option>
+                    </select>
+                </div>
+
+                <div class="input-group flex-1">
+                    <label><i class="fa-solid fa-key"></i> aisstream.io Ücretsiz API Anahtarı:</label>
+                    <input type="text" id="ais-api-key" placeholder="aisstream.io API anahtarınızı yapıştırın..." />
+                </div>
+
+                <div id="custom-url-group" class="input-group flex-2 hidden">
+                    <label><i class="fa-solid fa-link"></i> Canlı Video Linki (YouTube / RTSP / HLS):</label>
+                    <input type="text" id="custom-stream-url" placeholder="https://www.youtube.com/watch?v=... veya rtsp://..." />
+                </div>
+
+                <div class="input-group btn-holder">
+                    <button class="btn btn-primary" onclick="connectLiveStream()">
+                        <i class="fa-solid fa-satellite-dish"></i> Yayını Başlat & Bağlan
+                    </button>
+                </div>
+            </div>
+
+            <!-- Calibration Sliders Row -->
+            <div class="live-sliders-row">
+                <div class="slider-box">
+                    <div class="slider-header">
+                        <span>Kamera Yönü (Heading)</span>
+                        <strong id="val-heading">45°</strong>
+                    </div>
+                    <input type="range" id="slider-heading" min="0" max="360" value="45" oninput="onCalibrationSliderInput()" />
+                </div>
+
+                <div class="slider-box">
+                    <div class="slider-header">
+                        <span>Kamera Eğimi (Pitch)</span>
+                        <strong id="val-pitch">-5°</strong>
+                    </div>
+                    <input type="range" id="slider-pitch" min="-30" max="30" value="-5" oninput="onCalibrationSliderInput()" />
+                </div>
+
+                <div class="slider-box">
+                    <div class="slider-header">
+                        <span>Kamera Yüksekliği</span>
+                        <strong id="val-height">35 m</strong>
+                    </div>
+                    <input type="range" id="slider-height" min="5" max="150" value="35" oninput="onCalibrationSliderInput()" />
+                </div>
+
+                <div class="slider-box">
+                    <div class="slider-header">
+                        <span>Görüş Açısı (FOV)</span>
+                        <strong id="val-fov">45°</strong>
+                    </div>
+                    <input type="range" id="slider-fov" min="20" max="90" value="45" oninput="onCalibrationSliderInput()" />
+                </div>
+            </div>
+        </div>
+    </section>
 
     <!-- Bottom Panel: Fusion Data Table & Event Log -->
     <section class="grid-bottom">
@@ -102,8 +176,9 @@
                 <table class="c2-table">
                     <thead>
                         <tr>
-                            <th>VIS Track ID</th>
+                            <th>VIS ID</th>
                             <th>AIS MMSI</th>
+                            <th>Gemi Adı</th>
                             <th>Hız (SOG)</th>
                             <th>Rota (COG)</th>
                             <th>Enlem (LAT)</th>
@@ -113,7 +188,7 @@
                     </thead>
                     <tbody id="vessel-table-body">
                         <tr>
-                            <td colspan="7" class="empty-msg">Eşleşme verisi bekleniyor...</td>
+                            <td colspan="8" class="empty-msg">Eşleşme verisi bekleniyor...</td>
                         </tr>
                     </tbody>
                 </table>
@@ -152,6 +227,6 @@
 
     <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="/static/js/app.js"></script>
+    <script src="/static/js/app.js?v=2.6"></script>
 </body>
 </html>
