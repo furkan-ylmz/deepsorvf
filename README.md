@@ -43,35 +43,49 @@ Sistem mimarisi dört ana işlem modülünden oluşmaktadır:
 
 ---
 
+## Sistem Mimarisi ve Akış Şemaları
+
+![DeepSORVF Sistem Akış Şeması](docs/flowchart.png)
+
+![DeepSORVF Sıralı İşlem Diyagramı](docs/sequence_diagram.png)
+
+---
+
 ## Proje Dizin Yapısı
 
 ```
 deepsorvf/
-├── main.py                  # CLI arayüzü ve çevrimdışı iş akışı giriş noktası
-├── performance_monitor.py   # Donanım, GPU, bellek ve güç tüketim izleme modülü
-├── requirements.txt         # Proje bağımlılık listesi
-├── README.md                # Proje dokümantasyonu
-├── .gitignore               # Git dışlama kuralları
-├── utils/                   # Çekirdek İşlem ve Füzyon Paketi
+├── data/                    # Örnek test veri seti (Video, AIS CSV verileri, GT)
+├── docs/                    # Mimari akış ve sıralı işlem şemaları (PNG)
+│   ├── flowchart.png
+│   └── sequence_diagram.png
+├── models/                  # Ultralytics YOLOv8 ve YOLO11 ağırlık dosyaları
+│   ├── yolov8n.pt / yolov8s.pt / yolov8m.pt / yolov8l.pt / yolov8x.pt / yolo11x.pt
+├── result/                  # Olay yakalama ve analiz çıktıları (.gitignore)
+├── tests/                   # Benchmark doğrulama testleri
+│   └── test_benchmark.py    # Ground Truth MOTA, IDF1 benchmark doğrulama betiği
+├── core/                    # Çekirdek İşlem ve Füzyon Paketi
+│   ├── ais_processor.py     # AIS jeodezik hesaplama ve coğrafi projeksiyon
+│   ├── vis_processor.py     # Görsel tespit, takip ve Anti-Occlusion
+│   ├── fusion_processor.py  # Multi-Feature FastDTW ve Hungarian eşleştirici
+│   ├── ekf_fusion.py        # Genişletilmiş Kalman Filtresi (EKF) ve 5s Coasting
+│   ├── time_sync.py         # NCC Otomatik Zaman Senkronizasyonu
 │   ├── yolo_detector.py     # Ultralytics YOLOv8/v11 PyTorch CUDA dedektörü
-│   ├── bytetrack_tracker.py # ByteTrack / BoT-SORT çoklu nesne takipçisi
-│   ├── AIS_utils.py         # AIS jeodezik projeksiyon ve zaman senkronizasyonu
-│   ├── VIS_utils.py         # Görsel işleme ve Anti-Occlusion mantığı
-│   ├── FUS_utils.py         # Multi-Feature FastDTW ve Hungarian eşleştirici
-│   ├── draw.py              # Video üzerine çizim ve bilgi paneli oluşturan modül
+│   ├── byte_tracker.py      # ByteTrack / BoT-SORT çoklu nesne takipçisi
+│   ├── visualizer.py        # Video üzerine HUD çerçeve ve bilgi paneli çizimi
+│   ├── live_stream.py       # YouTube Live + aisstream.io canlı akış bağlayıcı
+│   ├── camera_profiles.py   # Kız Kulesi, Boğaz, Rotterdam hazır kamera profilleri
 │   ├── stream_simulator.py  # Offline arşiv replayer akış simülatörü
-│   ├── live_stream.py        # YouTube Live + aisstream.io canlı akış bağlayıcı
-│   ├── file_read.py         # Dosya okuma ve konfigürasyon yardımcısı
-│   └── gen_result.py        # Sonuç metriklerini CSV olarak kaydeden modül
-├── web_app/                 # Yerel Web Komuta Kontrol Paneli (Web C2)
+│   └── data_loader.py       # Veri seti okuma ve konfigürasyon yardımcısı
+├── web/                     # Yerel Web Komuta Kontrol Paneli (Web C2)
 │   ├── server.py            # FastAPI sunucusu ve WebSocket telemetri motoru
 │   └── static/              # HTML, CSS ve JavaScript frontend dosyaları
 │       ├── index.html       # Komuta kontrol ana ekranı
-│       ├── css/style.css    # Dark-mode arayüz tasarımı
+│       ├── css/style.css    # Dark-mode C2 arayüz tasarımı
 │       └── js/app.js        # Leaflet harita ve WebSocket istemci mantığı
-├── tests/
-│   └── evaluate.py          # Ground Truth MOTA, IDF1 benchmark doğrulama betiği
-└── clip-01/                 # Örnek test veri seti (Video, AIS CSV verileri, GT)
+├── requirements.txt         # Proje bağımlılık listesi
+├── README.md                # Proje dokümantasyonu
+└── .gitignore               # Git dışlama kuralları
 ```
 
 ---
@@ -91,7 +105,7 @@ pip install -r requirements.txt
 Arayüzü başlatmak için sunucu betiğini çalıştırın:
 
 ```bash
-python web_app/server.py
+python web/server.py
 ```
 
 Sunucu başladıktan sonra web tarayıcınızda aşağıdaki adrese gidin:
@@ -104,21 +118,14 @@ Arayüz Özellikleri:
 - Mod Seçimi: File Replayer (Arşiv Videoları) veya Live Web Stream (Canlı Yayın).
 - Model Seçimi: YOLOv8x, YOLOv8l, YOLOv8m, YOLOv8s, YOLOv8n ve YOLO11x modelleri arasında dinamik geçiş.
 - Deniz Haritası: Sağ üst köşedeki katman butonundan OpenSeaMap katmanı aktif edilebilir.
+- Canlı Kalibrasyon: Kamera açısı, eğimi, yüksekliği ve görüş alanı anlık olarak ayarlanabilir.
 
-### 3. Komut Satırından (CLI) Çevrimdışı Çalıştırma
-
-Sistemi web arayüzü olmadan doğrudan terminal üzerinden çalıştırmak için:
-
-```bash
-python main.py --data_path ./clip-01/ --monitor
-```
-
-### 4. Ground Truth Benchmark Değerlendirme Testi
+### 3. Ground Truth Benchmark Değerlendirme Testi
 
 Sistemin doğruluk metriklerini (MOTA, IDF1, Precision, Recall) Ground Truth verileriyle kıyaslamak için:
 
 ```bash
-python tests/evaluate.py
+python tests/test_benchmark.py
 ```
 
 ---

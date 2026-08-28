@@ -117,14 +117,14 @@ def run_evaluation():
     print("DeepSORVF Ground Truth Benchmark & Precision Evaluation")
     print("=" * 65)
     
-    gt_dir = "./clip-01/gt"
+    gt_dir = "./data/gt"
     res_dir = "./result/metric"
     
-    gt_tracking = os.path.join(gt_dir, "clip-01_gt_tracking.txt")
-    gt_fusion = os.path.join(gt_dir, "clip-01_gt_fusion.txt")
+    gt_tracking = os.path.join(gt_dir, "gt_tracking.txt")
+    gt_fusion = os.path.join(gt_dir, "gt_fusion.txt")
     
-    res_tracking = os.path.join(res_dir, "clip-01_gt_tracking.txt")
-    res_fusion = os.path.join(res_dir, "clip-01_gt_fusion.txt")
+    res_tracking = os.path.join(res_dir, "gt_tracking.txt")
+    res_fusion = os.path.join(res_dir, "gt_fusion.txt")
     
     print("\n1. Visual Tracking (ByteTrack + YOLOv8) Benchmark:")
     m_track = evaluate_metrics(gt_tracking, res_tracking if os.path.exists(res_tracking) else gt_tracking)
