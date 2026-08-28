@@ -1,4 +1,4 @@
-﻿import os, time, glob, re
+import os, time, glob, re
 from datetime import datetime
 
 def time2stamp(Time):
@@ -40,9 +40,10 @@ def read_all(path, result_path):
         os.remove(result_metric[:-4]+'_detection'+result_metric[-4:])
     if (os.path.exists(result_metric[:-4]+'_tracking'+result_metric[-4:])):
         os.remove(result_metric[:-4]+'_tracking'+result_metric[-4:])
-    if (os.path.exists(result_metric[:-4]+'_fusion'+result_metric[-4:])):
-        os.remove(result_metric[:-4]+'_fusion'+result_metric[-4:])
-    initial_time = [int(v_p[-11]), int(v_p[-10]), int(v_p[-9]), int(v_p[-8]), int(v_p[-7]), int(v_p[-6]), 0]
+    if v_p[-2] == 'b':
+        initial_time = [int(v_p[-11]), int(v_p[-10]), int(v_p[-9]), int(v_p[-8]), int(v_p[-7]), int(v_p[-6]), 0]
+    else:
+        initial_time = [int(v_p[-10]), int(v_p[-9]), int(v_p[-8]), int(v_p[-7]), int(v_p[-6]), int(v_p[-5]), 0]
     
     with open(glob.glob(path+'/*.txt')[0], "r") as f:
         camera_para = f.readlines()[0][1:-2]

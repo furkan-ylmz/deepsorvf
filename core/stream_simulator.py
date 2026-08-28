@@ -3,14 +3,14 @@ import time
 import os
 import glob
 import pandas as pd
-from utils.file_read import time2stamp, update_time
+from core.data_loader import time2stamp, update_time
 
 class StreamSimulator:
     """
     Offline Stream Simulator: Replays video files and AIS CSV logs in real-time or fast mode.
     Simulates IP Camera (RTSP) and AIS Socket feeds for testing.
     """
-    def __init__(self, data_path="./clip-01/", initial_time=None):
+    def __init__(self, data_path="./data/", initial_time=None):
         self.data_path = data_path
         video_files = glob.glob(os.path.join(data_path, "*.mp4")) + glob.glob(os.path.join(data_path, "*.avi"))
         if len(video_files) == 0:

@@ -167,7 +167,7 @@ class LiveYouTubeStreamer:
     Uses Streamlink to resolve live HLS streams with automatic token refresh and single-thread safety.
     Falls back to sample maritime footage if stream URL is connecting or empty.
     """
-    def __init__(self, youtube_url="", fallback_video="./clip-01/2022_06_04_12_05_12_12_07_02_b.mp4"):
+    def __init__(self, youtube_url="", fallback_video="./data/2022_06_04_12_05_12_12_07_02.mp4"):
         self.youtube_url = youtube_url
         self.fallback_video = fallback_video
         self.cap = None

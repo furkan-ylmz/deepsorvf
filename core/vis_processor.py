@@ -3,8 +3,8 @@ import torch
 from PIL import Image
 import pandas as pd
 from warnings import simplefilter
-from utils.yolo_detector import YOLODetector
-from utils.bytetrack_tracker import ByteTracker
+from core.yolo_detector import YOLODetector
+from core.byte_tracker import ByteTracker
 
 simplefilter(action='ignore', category=FutureWarning)
 

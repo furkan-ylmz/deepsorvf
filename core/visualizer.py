@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 import cv2
-from utils.AIS_utils import AISPRO
+from core.ais_processor import AISPRO
 
 def add_alpha_channel(img):
 

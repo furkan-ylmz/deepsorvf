@@ -1,3 +1,4 @@
+import os
 import torch
 import numpy as np
 import cv2
@@ -6,7 +7,7 @@ from ultralytics import YOLO
 class YOLODetector:
     """
     Ultralytics YOLOv8 / YOLO11 Object Detector Wrapper with PyTorch CUDA Acceleration.
-    Supports dynamic model size switching (yolov8n .. yolov8x, yolo11x).
+    Supports dynamic model size switching (yolov8n .. yolov8x, yolo11x) located in models/ directory.
     """
     def __init__(self, model_name="yolov8x.pt", conf_thresh=0.25, iou_thresh=0.45, device=None):
         self.conf_thresh = conf_thresh
@@ -18,20 +19,34 @@ class YOLODetector:
         else:
             self.device = device
             
-        print(f"🚀 YOLODetector Initializing | Model: {model_name} | Device: {self.device}")
         self.model_name = model_name
-        self.model = YOLO(model_name)
+        model_path = self._resolve_model_path(model_name)
+        print(f"[INFO] YOLODetector Initializing | Model: {model_name} (Path: {model_path}) | Device: {self.device}")
+        self.model = YOLO(model_path)
         
         # COCO class index for boat/ship
         self.target_classes = [8]  # 8: 'boat' in COCO dataset
 
+    def _resolve_model_path(self, name):
+        """Resolve model path inside models/ directory or local directory."""
+        if os.path.exists(name):
+            return name
+        models_dir_path = os.path.join(os.path.dirname(__file__), "..", "models", os.path.basename(name))
+        if os.path.exists(models_dir_path):
+            return models_dir_path
+        local_models_path = os.path.join("models", os.path.basename(name))
+        if os.path.exists(local_models_path):
+            return local_models_path
+        return name
+
     def change_model(self, model_name):
         """Dynamically switch YOLO model weights at runtime."""
         if model_name != self.model_name:
-            print(f"🔄 Switching YOLO model from {self.model_name} to {model_name}...")
+            model_path = self._resolve_model_path(model_name)
+            print(f"[INFO] Switching YOLO model from {self.model_name} to {model_name}...")
             self.model_name = model_name
-            self.model = YOLO(model_name)
-            print(f"✅ YOLO Model switched to {model_name}")
+            self.model = YOLO(model_path)
+            print(f"[INFO] YOLO Model switched to {model_name}")
 
     def detect(self, image):
         """

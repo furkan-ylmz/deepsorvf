@@ -34,7 +34,7 @@ def angle(v1, v2):
             included_angle = math.pi*2 - included_angle
     return included_angle
 
-from utils.ekf_fusion import EKFFusionManager
+from core.ekf_fusion import EKFFusionManager
 
 def multi_feature_dtw(vis_traj, ais_traj, vis_inf=None, ais_inf=None, w_p=0.50, w_v=0.25, w_theta=0.15, w_s=0.10):
     """
