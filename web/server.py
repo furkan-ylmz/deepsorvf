@@ -16,16 +16,15 @@ import threading
 # Add root directory to python path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from utils.VIS_utils import VISPRO
-from utils.AIS_utils import AISPRO
-from utils.FUS_utils import FUSPRO
-from utils.draw import DRAW
-from utils.file_read import read_all, ais_initial, update_time
-from utils.stream_simulator import StreamSimulator
-from utils.time_sync import AutoTimestampSynchronizer
-from utils.camera_profiles import MARITIME_PROFILES, get_profile, list_profiles, calculate_camera_parameters
-from utils.live_stream import LiveAISStreamer, LiveYouTubeStreamer
-from performance_monitor import PerformanceMonitor
+from core.vis_processor import VISPRO
+from core.ais_processor import AISPRO
+from core.fusion_processor import FUSPRO
+from core.visualizer import DRAW
+from core.data_loader import read_all, ais_initial, update_time
+from core.stream_simulator import StreamSimulator
+from core.time_sync import AutoTimestampSynchronizer
+from core.camera_profiles import MARITIME_PROFILES, get_profile, list_profiles, calculate_camera_parameters
+from core.live_stream import LiveAISStreamer, LiveYouTubeStreamer
 
 app = FastAPI(title="DeepSORVF Web C2 Dashboard", version="2.5.0")
 
@@ -47,7 +46,7 @@ class SystemEngine:
     Core Execution Engine managing Dual Stream Modes (File Replayer & Zero-Cost Live Web Stream),
     YOLOv8 Detection, ByteTrack Tracking, Multi-Feature DTW, EKF Fusion, and Live WebSocket Telemetry.
     """
-    def __init__(self, data_path="./clip-01/", result_path="./result/"):
+    def __init__(self, data_path="./data/", result_path="./result/"):
         self.data_path = data_path
         self.result_path = result_path
         self.model_name = "yolov8x.pt"
@@ -81,10 +80,6 @@ class SystemEngine:
         self.calibration_state = {
             "heading": 45.0, "pitch": -5.0, "roll": 0.0, "height": 35.0, "fov": 45.0
         }
-        
-        # Performance Monitor
-        self.monitor = PerformanceMonitor(log_file="web_c2_performance.csv")
-        self.monitor.start_monitoring()
         
         self.current_frame = None
         self.current_overlay = None
