@@ -9,7 +9,7 @@ class YOLODetector:
     Ultralytics YOLOv8 / YOLO11 Object Detector Wrapper with PyTorch CUDA Acceleration.
     Supports dynamic model size switching (yolov8n .. yolov8x, yolo11x) located in models/ directory.
     """
-    def __init__(self, model_name="yolov8x.pt", conf_thresh=0.25, iou_thresh=0.45, device=None):
+    def __init__(self, model_name="yolov8s.pt", conf_thresh=0.25, iou_thresh=0.45, device=None):
         self.conf_thresh = conf_thresh
         self.iou_thresh = iou_thresh
         

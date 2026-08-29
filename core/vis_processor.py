@@ -9,7 +9,7 @@ from core.byte_tracker import ByteTracker
 simplefilter(action='ignore', category=FutureWarning)
 
 class VISPRO(object):
-    def __init__(self, anti, val, t, model_name="yolov8x.pt", tracker_type="bytetrack"):
+    def __init__(self, anti, val, t, model_name="yolov8s.pt", tracker_type="bytetrack"):
         self.anti = anti
         self.val = val
         self.t = t

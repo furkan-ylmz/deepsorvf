@@ -49,7 +49,7 @@ class SystemEngine:
     def __init__(self, data_path="./data/", result_path="./result/"):
         self.data_path = data_path
         self.result_path = result_path
-        self.model_name = "yolov8x.pt"
+        self.model_name = "yolov8s.pt"
         self.mode = "file"  # "file" or "live"
         self.is_running = True
         
