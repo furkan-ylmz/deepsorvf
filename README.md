@@ -148,17 +148,8 @@ python tests/test_benchmark.py
    `streamlink` kütüphanesi aracılığıyla YouTube üzerindeki 7/24 deniz canlı yayınlarından video akışı alır ve `aisstream.io` WebSocket servisine bağlanarak anlık coğrafi bölgedeki gerçek gemi telsiz verilerini çekip eşleştirir.
 
 ---
----
 
 <a name="english"></a>
-<div align="center">
-
-[English](#english) | [Türkçe](#türkçe)
-
-</div>
-
----
-
 # DeepSORVF - Vessel Tracking and AIS Sensor Fusion System
 
 DeepSORVF (Deep learning-enabled Asynchronous Trajectory Matching-based Vessel Data Fusion) is a hybrid maritime surveillance and identification system that merges visual video streams captured by vessel/shore cameras with AIS (Automatic Identification System) radio broadcasts using spatiotemporal optimal trajectory matching algorithms.
