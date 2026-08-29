@@ -1,3 +1,12 @@
+<div align="center">
+
+[English](#english) | [Türkçe](#türkçe)
+
+</div>
+
+---
+
+<a name="türkçe"></a>
 # DeepSORVF - Gemi Takip ve AIS Sensör Füzyon Sistemi
 
 DeepSORVF (Deep learning-enabled Asynchronous Trajectory Matching-based Vessel Data Fusion), gemi kameralarından alınan görsel video akışları ile AIS (Automatic Identification System) telsiz verilerini zaman-mekansal optimal eşleştirme algoritmaları kullanarak birleştiren hibrit bir denizcilik takip ve kimliklendirme sistemidir.
@@ -54,7 +63,7 @@ Sistem mimarisi dört ana işlem modülünden oluşmaktadır:
 ## Proje Dizin Yapısı
 
 ```
-deepsorvf/
+DeepSORVF/
 ├── data/                    # Örnek test veri seti (Video, AIS CSV verileri, GT)
 ├── docs/                    # Mimari akış ve sıralı işlem şemaları (PNG)
 │   ├── flowchart.png
@@ -137,3 +146,155 @@ python tests/test_benchmark.py
 
 2. **Live Web Stream Mode (Canlı İnternet Akışı):**
    `streamlink` kütüphanesi aracılığıyla YouTube üzerindeki 7/24 deniz canlı yayınlarından video akışı alır ve `aisstream.io` WebSocket servisine bağlanarak anlık coğrafi bölgedeki gerçek gemi telsiz verilerini çekip eşleştirir.
+
+---
+---
+
+<a name="english"></a>
+<div align="center">
+
+[English](#english) | [Türkçe](#türkçe)
+
+</div>
+
+---
+
+# DeepSORVF - Vessel Tracking and AIS Sensor Fusion System
+
+DeepSORVF (Deep learning-enabled Asynchronous Trajectory Matching-based Vessel Data Fusion) is a hybrid maritime surveillance and identification system that merges visual video streams captured by vessel/shore cameras with AIS (Automatic Identification System) radio broadcasts using spatiotemporal optimal trajectory matching algorithms.
+
+This project associates visual ship detections (YOLO) and multi-object tracking (ByteTrack) with corresponding AIS MMSI numbers, speed, course, and latitude/longitude coordinates, presenting synchronized visual and geospatial telemetry in a single tactical Command and Control (C2) web dashboard.
+
+---
+
+## System Architecture & Core Components
+
+The architecture consists of four primary processing engines:
+
+1. **VISPRO (Visual Perception & Tracking Engine):**
+   - Object detection powered by Ultralytics YOLOv8 and YOLO11 architectures with PyTorch CUDA GPU acceleration.
+   - Cross-frame track ID persistence and identity consistency via ByteTrack and BoT-SORT algorithms.
+   - Anti-Occlusion trajectory estimation using historical motion vectors to prevent ID switching during vessel overlap.
+
+2. **AISPRO (AIS Kinematics & Geodesic Projection Engine):**
+   - Outlier rejection filtering for invalid GPS coordinates and unrealistic speed spikes in marine radio broadcasts.
+   - PyProj WGS84 geodesic forward kinematic extrapolation for missing timestamp estimation.
+   - Dynamic 3D Pinhole camera matrix projection (Heading, Pitch, Height, Focal Length/FOV) mapping 3D geographical coordinates (Lat, Lon) to 2D image plane pixels (X, Y).
+
+3. **FUSPRO (Sensor Fusion & Spatiotemporal Association Engine):**
+   - Multi-feature trajectory similarity calculation comparing course angle deviation, speed, aspect ratio, and Euclidean distance.
+   - FastDTW (Fast Dynamic Time Warping) algorithm constructing a time-aligned cost matrix across asynchronous feeds.
+   - Global optimal Hungarian (Linear Sum Assignment) solver associating Visual Track IDs with AIS MMSI numbers.
+
+4. **Web C2 (Command & Control Web Dashboard):**
+   - Real-time 30 FPS MJPEG video streaming and 10 Hz WebSocket telemetry powered by FastAPI and Uvicorn.
+   - Interactive Leaflet.js maritime map supporting OpenStreetMap, Esri World Imagery, and OpenSeaMap nautical marks.
+   - Dark Ship / Unidentified Target early-warning engine for vessels navigating without active AIS broadcasts.
+
+---
+
+## Technical Stack
+
+- **Programming Language:** Python 3.10+
+- **Deep Learning & Tracking:** Ultralytics (YOLOv8 / YOLO11), PyTorch (CUDA Accelerated), ByteTrack
+- **Computer Vision:** OpenCV, NumPy, Pillow, Imutils
+- **Geospatial & Mathematical Algorithms:** PyProj, GeoPy, SciPy, FastDTW
+- **Web & Interface:** FastAPI, Uvicorn, WebSockets, HTML5, CSS3, JavaScript, Leaflet.js, OpenSeaMap
+- **Hardware & Telemetry Monitoring:** Psutil, GPUtil, Pynvml
+
+---
+
+## Architecture Diagrams
+
+![DeepSORVF System Flowchart](docs/flowchart.png)
+
+![DeepSORVF Sequence Diagram](docs/sequence_diagram.png)
+
+---
+
+## Project Structure
+
+```
+DeepSORVF/
+├── data/                    # Sample benchmark dataset (Video, AIS CSV logs, GT)
+├── docs/                    # Architectural flowcharts and sequence diagrams (PNG)
+│   ├── flowchart.png
+│   └── sequence_diagram.png
+├── models/                  # Ultralytics YOLOv8 and YOLO11 weights (.pt)
+│   ├── yolov8n.pt / yolov8s.pt / yolov8m.pt / yolov8l.pt / yolov8x.pt / yolo11x.pt
+├── result/                  # Export results and evaluation metrics (.gitignore)
+├── tests/                   # Benchmark validation test suite
+│   └── test_benchmark.py    # Ground Truth MOTA, IDF1 benchmark evaluation script
+├── core/                    # Core AI, Fusion and Kinematics Package
+│   ├── ais_processor.py     # AIS geodesic calculations and 3D pinhole projection
+│   ├── vis_processor.py     # Visual detection, ByteTrack tracking & anti-occlusion
+│   ├── fusion_processor.py  # Multi-Feature FastDTW and Hungarian optimal assigner
+│   ├── ekf_fusion.py        # Extended Kalman Filter (EKF) with 5s coasting memory
+│   ├── time_sync.py         # NCC Automatic Timestamp Synchronizer
+│   ├── yolo_detector.py     # Ultralytics YOLOv8/v11 PyTorch CUDA detector
+│   ├── byte_tracker.py      # ByteTrack / BoT-SORT multi-object tracker
+│   ├── visualizer.py        # Video HUD tactical overlay and telemetry visualizer
+│   ├── live_stream.py       # Zero-cost YouTube Live HLS + aisstream.io connector
+│   ├── camera_profiles.py   # Maiden's Tower, Bosphorus, Rotterdam camera presets
+│   ├── stream_simulator.py  # Offline historical archive replayer simulator
+│   └── data_loader.py       # Dataset reader and configuration helper
+├── web/                     # Local Web Command & Control Dashboard (Web C2)
+│   ├── server.py            # FastAPI server and real-time WebSocket telemetry engine
+│   └── static/              # HTML, CSS and JavaScript frontend assets
+│       ├── index.html       # Command and control dashboard interface
+│       ├── css/style.css    # Modern tactical dark-mode C2 UI styling
+│       └── js/app.js        # Leaflet map logic and WebSocket client
+├── requirements.txt         # Project dependencies
+├── README.md                # Bilingual documentation
+└── .gitignore               # Git ignore rules
+```
+
+---
+
+## Installation & Usage
+
+### 1. Install Dependencies
+
+Install all required Python packages using pip:
+
+```bash
+pip install -r requirements.txt
+```
+
+### 2. Launch Web Command & Control Dashboard (Web C2)
+
+Start the local dashboard server:
+
+```bash
+python web/server.py
+```
+
+Once started, open your web browser and navigate to:
+
+```
+http://localhost:8000
+```
+
+Dashboard Features:
+- Mode Selection: Toggle dynamically between File Replayer (Archive Dataset) and Live Web Stream (Real-Time Shore Cameras).
+- Model Selection: Hot-swap between YOLOv8x, YOLOv8l, YOLOv8m, YOLOv8s, YOLOv8n, and YOLO11x models on the fly.
+- Nautical Chart: Enable OpenSeaMap navigation aids and sea marks from the upper-right layer control.
+- Live Calibration: Adjust camera heading, pitch, height, and field-of-view (FOV) in real-time.
+
+### 3. Run Ground Truth Benchmark Evaluation
+
+Evaluate visual tracking and sensor fusion accuracy metrics (MOTA, IDF1, Precision, Recall) against Ground Truth annotations:
+
+```bash
+python tests/test_benchmark.py
+```
+
+---
+
+## Data Streaming Modes
+
+1. **File Mode (Offline Archive Simulation):**
+   Reads local MP4 video recordings and chronologically ordered AIS CSV files frame-by-frame, simulating real-time playback for deterministic benchmarking and testing.
+
+2. **Live Web Stream Mode (Zero-Cost Live Internet Stream):**
+   Streams 24/7 high-definition maritime video directly from YouTube live feeds via `streamlink` and connects to the `aisstream.io` global WebSocket service to ingest and fuse real-world ship radio telemetry in real-time.
